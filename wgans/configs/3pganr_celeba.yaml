@@ -1,0 +1,48 @@
+model:
+  _target_: gans.ThreePlayerGAN
+  data_dim:
+    - 3
+    - 64
+    - 64
+  code_size: 1000
+
+  critic:
+    _target_: ..models.custom_resnet.resnet14_d
+
+  generator:
+    _target_: ..models.custom_resnet.resnet14_g
+
+  transport:
+    _target_: ..models.unet.unet_h
+    n_blocks: 2
+
+  noise_distribution:
+    _target_: distributions.Normal
+
+  critic_step_period: 20
+  generator_step_period: 10
+  transport_step_period: 1
+  l: .01
+  p: 2.0
+  reversed: true
+
+
+optimizer:
+  _target_: torch.optim.Adam
+  lr: 5e-5
+  betas:
+    - 0.5
+    - 0.999
+  weight_decay: 1e-5
+
+datamodule:
+  _target_: datamodules.CelebADataModule
+  batch_size: 32
+  num_workers: 8
+  root: "data/"
+  download: false
+
+trainer:
+  log_every_n_steps: 20
+  gpus: 1
+  max_epochs: 100

@@ -1,0 +1,39 @@
+model:
+  _target_: gans.Wasserstein1GAN
+  data_dim:
+    - 1
+    - 28
+    - 28
+  code_size: 32
+
+  critic:
+    _target_: models.simple.mnistnet_d
+
+  generator:
+    _target_: models.simple.mnistnet_g
+
+  noise_distribution:
+    _target_: distributions.Normal
+
+  weight_range: 0.01
+  critic_step_period: 1
+  generator_step_period: 1
+
+optimizer:
+  _target_: torch.optim.Adam
+  lr: 2e-3
+  betas:
+    - 0.5
+    - 0.999
+  weight_decay: 1e-5
+
+datamodule:
+  _target_: datamodules.MNISTDataModule
+  batch_size: 256
+  num_workers: 4
+  root: "data/"
+
+trainer:
+  log_every_n_steps: 20
+  # gpus: 1
+  max_epochs: 30
