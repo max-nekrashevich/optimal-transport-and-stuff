@@ -39,7 +39,7 @@ datamodule:
   _target_: datamodules.CelebADataModule
   batch_size: 32
   num_workers: 8
-  root: "data/"
+  root: "../data/"
   download: false
 
 trainer:
