@@ -156,3 +156,5 @@ cython_debug/
 
 data/
 misc/
+**/runs
+**/wandb

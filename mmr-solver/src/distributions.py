@@ -1,6 +1,8 @@
 import torch
 import torch.distributions as d
 
+from numpy import prod
+from sklearn.datasets import make_moons
 from torch.distributions import MultivariateNormal
 
 
@@ -8,7 +10,8 @@ __all__ = ["Uniform",
            "Normal",
            "MultivariateNormal",
            "GaussianMixture",
-           "ImageDistribution"]
+           "ImageDistribution",
+           "MoonsDistribution"]
 
 
 def clip(tensor):
@@ -59,3 +62,21 @@ def ImageDistribution(image_tensor, scale, center=None, sigma=.01, n_components=
     probs = density[density != 0][ix]
 
     return GaussianMixture(locs, scales, probs)
+
+
+class MoonsDistribution:
+    def __init__(self, upper=False, scale=1., center=None, sigma=.01):
+        self.upper = upper
+        self.scale = torch.tensor(scale)
+        if center is None:
+            center = torch.zeros(2)
+        self.center = center
+        self.sigma = sigma
+
+    def sample(self, sample_shape):
+        n_samples = prod(sample_shape, dtype=int)
+        points, _ = make_moons((n_samples, 0) if self.upper else (0, n_samples),
+                               noise=self.sigma)
+        points = torch.from_numpy(points).float()
+        points = self.center + self.scale * points
+        return points.view(*sample_shape, -1)

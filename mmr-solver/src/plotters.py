@@ -67,18 +67,17 @@ def plot_arrows(samples, moved_samples):
 
 
 class Plotter:
-    def __init__(self, source_lims, target_lims):
+    def __init__(self, source_lims, target_lims, show_progress=True, pdf_params={}, transport_params={}):
         self.pdf_params = dict(
-            figsize=(12,5),
-            plot_source=True,
-            plot_target=True,
+            figsize=(9,4),
             source_lims=source_lims,
             target_lims=target_lims,
             n_points=50,
             colorbar=True,
         )
+        self.pdf_params.update(pdf_params)
         self.transport_params = dict(
-            figsize=(12,10),
+            figsize=(9,7),
             plot_x=True,
             plot_y=True,
             plot_h_x=True,
@@ -91,20 +90,36 @@ class Plotter:
             cmap=cm.PRGn,
             n_points=50,
         )
+        self.transport_params.update(transport_params)
+        self.show = show_progress
 
     def init_widget(self):
-        self._plot_widget = Output()
-        display(self._plot_widget)
+        if self.show:
+            self._plot_widget = Output()
+            display(self._plot_widget)
 
     def update_widget(self, x, y, h_x, critic):
-        with self._plot_widget:
-            clear_output(wait=True)
-            figure = self.plot_transport(x, y, h_x, critic)
-            plt.show(block=False)
+        figure = self.plot_transport(x, y, h_x, critic)
+        if self.show:
+            with self._plot_widget:
+                try:
+                    clear_output(wait=True)
+                    plt.show(block=False)
+                    interrupted = False
+                except KeyboardInterrupt:
+                    self.close_widget()
+                    interrupted = True
+
+            if interrupted:
+                raise KeyboardInterrupt
+        else:
+            plt.close()
+
         return figure
 
     def close_widget(self):
-        self._plot_widget.close()
+        if self.show:
+            self._plot_widget.close()
 
     def _plot_density(self, distribution, lims):
         mesh = get_mesh(*lims, self.pdf_params["n_points"])
@@ -114,8 +129,8 @@ class Plotter:
             plt.colorbar(label="Density")
 
     def plot_pdfs(self, source, target):
-        plot_s = self.pdf_params["plot_source"]
-        plot_t = self.pdf_params["plot_target"]
+        plot_s = self.pdf_params["source_lims"] is not None
+        plot_t = self.pdf_params["target_lims"] is not None
 
         figure = None
         if plot_s or plot_t:
@@ -129,7 +144,11 @@ class Plotter:
             plt.subplot(1, 1 + plot_s, 1 + plot_s, title="Target PDF")
             self._plot_density(target, self.pdf_params["target_lims"])
 
-        plt.show()
+        plt.tight_layout()
+        if self.show:
+            plt.show()
+        else:
+            plt.close()
         return figure
 
     def plot_transport(self, x, y, h_x, critic):
@@ -154,4 +173,5 @@ class Plotter:
         plt.colorbar(label="Critic output")
 
         plt.legend(loc="upper left")
+        plt.tight_layout()
         return figure
