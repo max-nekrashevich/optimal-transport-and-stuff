@@ -1,37 +1,10 @@
+from matplotlib import projections
 import torch
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
 from ipywidgets import Output
 from IPython.display import clear_output, display
-
-# def get_prob(distribution):
-#     def get(tensor):
-#         return distribution.log_prob(tensor).exp_()
-#     return get
-
-
-# def apply_critic(critic):
-#     DEVICE = next(critic.parameters()).device
-#     @torch.no_grad()
-#     def apply(tensor):
-#         return critic(tensor.to(DEVICE))
-#     return apply
-
-
-# def plot_grid(func, xlim=None, ylim=None, n_pixels=50,
-#               colorbar=False, colorbar_label=None, **imshow_kwargs):
-#     ylim = ylim or xlim or plt.gca().get_ylim()
-#     xlim = xlim or plt.gca().get_xlim()
-#     mesh = torch.meshgrid(torch.linspace(*xlim, n_pixels),
-#                           torch.linspace(*ylim, n_pixels), indexing="xy")
-#     grid = func(torch.dstack(mesh)).cpu().numpy()
-#     dx = .5 * (xlim[1] - xlim[0]) / (n_pixels - 1)
-#     dy = .5 * (ylim[1] - ylim[0]) / (n_pixels - 1)
-#     extent = (xlim[0] - dx, xlim[1] + dx, ylim[0] - dy, ylim[1] + dy)
-#     plt.imshow(grid[::-1, :], extent=extent, **imshow_kwargs)
-#     if colorbar:
-#         plt.colorbar(label=colorbar_label)
 
 
 def get_mesh(xlim, ylim, n_points):
@@ -51,12 +24,25 @@ def get_critic_heatmap(critic, mesh):
     return critic(torch.dstack(mesh).to(device)).cpu().squeeze(-1)
 
 
+def get_projection(dim):
+    return "3d" if dim == 3 else "rectilinear"
+
+
 def plot_heatmap(hmap, xlim, ylim, **imshow_kwargs):
     yticks, xticks = hmap.shape
     dx = .5 * (xlim[1] - xlim[0]) / (xticks - 1)
     dy = .5 * (ylim[1] - ylim[0]) / (yticks - 1)
     extent = (xlim[0] - dx, xlim[1] + dx, ylim[0] - dy, ylim[1] + dy)
     plt.imshow(hmap[::-1, :], extent=extent, **imshow_kwargs)
+
+
+def plot_samples(samples: torch.Tensor, **scatter_kwargs):
+    _, dim = samples.size()
+    ax = plt.gca()
+    if ax.name != get_projection(dim):
+        ax = plt.subplot(projection=get_projection(dim))
+
+    ax.scatter(*samples.detach().cpu().numpy().T, **scatter_kwargs)
 
 
 @torch.no_grad()
@@ -66,12 +52,14 @@ def plot_arrows(samples, moved_samples):
     plt.quiver(x, y, dx, dy, angles='xy', scale_units='xy', scale=1., width=.0025)
 
 
-class Plotter:
-    def __init__(self, source_lims, target_lims, show_progress=True, pdf_params={}, transport_params={}):
+class SimplePlotter:
+    def __init__(self, source_dim, target_dim, show_progress=True, pdf_params={}, transport_params={}):
         self.pdf_params = dict(
             figsize=(9,4),
-            source_lims=source_lims,
-            target_lims=target_lims,
+            source_lims=None,
+            source_kind="samples",
+            target_lims=None,
+            target_kind="samples",
             n_points=50,
             colorbar=True,
         )
@@ -92,6 +80,8 @@ class Plotter:
         )
         self.transport_params.update(transport_params)
         self.show = show_progress
+        self.source_dim = source_dim
+        self.target_dim = target_dim
 
     def init_widget(self):
         if self.show:
@@ -121,12 +111,17 @@ class Plotter:
         if self.show:
             self._plot_widget.close()
 
-    def _plot_density(self, distribution, lims):
-        mesh = get_mesh(*lims, self.pdf_params["n_points"])
-        hmap = get_prob_heatmap(distribution, mesh).numpy()
-        plot_heatmap(hmap, *lims)
-        if self.pdf_params["colorbar"]:
-            plt.colorbar(label="Density")
+    def _plot_density(self, distribution, kind, lims):
+        if kind == "pdf":
+            mesh = get_mesh(*lims, self.pdf_params["n_points"])
+            hmap = get_prob_heatmap(distribution, mesh).numpy()
+            plot_heatmap(hmap, *lims)
+            if self.pdf_params["colorbar"]:
+                plt.colorbar(label="Density")
+        elif kind == "samples":
+            samples = distribution.sample((self.pdf_params["n_points"],))
+            plot_samples(samples)
+
 
     def plot_pdfs(self, source, target):
         plot_s = self.pdf_params["source_lims"] is not None
@@ -137,12 +132,18 @@ class Plotter:
             figure = plt.figure(figsize=self.pdf_params["figsize"])
 
         if plot_s:
-            plt.subplot(1, 1 + plot_t, 1, title="Source PDF")
-            self._plot_density(source, self.pdf_params["source_lims"])
+            plt.subplot(1, 1 + plot_t, 1, title="Source PDF",
+                        projection=get_projection(self.source_dim))
+            self._plot_density(source,
+                               self.pdf_params["source_kind"],
+                               self.pdf_params["source_lims"])
 
         if plot_t:
-            plt.subplot(1, 1 + plot_s, 1 + plot_s, title="Target PDF")
-            self._plot_density(target, self.pdf_params["target_lims"])
+            plt.subplot(1, 1 + plot_s, 1 + plot_s, title="Target PDF",
+                        projection=get_projection(self.target_dim))
+            self._plot_density(target,
+                               self.pdf_params["target_kind"],
+                               self.pdf_params["target_lims"])
 
         plt.tight_layout()
         if self.show:
@@ -153,24 +154,27 @@ class Plotter:
 
     def plot_transport(self, x, y, h_x, critic):
         figure = plt.figure(figsize=self.transport_params["figsize"])
-        plt.scatter(*x.detach().cpu().numpy().T,
-                    color=self.transport_params["x_color"], label="Source samples",
-                    alpha=self.transport_params["dots_alpha"])
-        plt.scatter(*y.detach().cpu().numpy().T,
-                    color=self.transport_params["y_color"], label="Target samples",
-                    alpha=self.transport_params["dots_alpha"])
-        plt.scatter(*h_x.detach().cpu().numpy().T,
-                    color=self.transport_params["h_x_color"], label="Moved samples",
-                    alpha=self.transport_params["dots_alpha"])
-        plot_arrows(x[:self.transport_params["n_arrows"]],
-                    h_x[:self.transport_params["n_arrows"]])
+        if self.source_dim == self.target_dim:
+            plot_samples(x, color=self.transport_params["x_color"],
+                         alpha=self.transport_params["dots_alpha"],
+                         label="Source samples")
+        plot_samples(y, color=self.transport_params["y_color"],
+                     alpha=self.transport_params["dots_alpha"],
+                     label="Target samples")
+        plot_samples(h_x, color=self.transport_params["h_x_color"],
+                     alpha=self.transport_params["dots_alpha"],
+                     label="Moved samples")
+        if self.source_dim == self.target_dim:
+            plot_arrows(x[:self.transport_params["n_arrows"]],
+                        h_x[:self.transport_params["n_arrows"]])
 
-        lims = (plt.gca().get_xlim(), plt.gca().get_ylim())
-        mesh = get_mesh(*lims, self.transport_params["n_points"])
-        hmap = get_critic_heatmap(critic, mesh).numpy()
-        plot_heatmap(hmap, *lims, alpha=self.transport_params["hmap_alpha"],
-                     cmap=self.transport_params["cmap"])
-        plt.colorbar(label="Critic output")
+        if self.target_dim == 2:
+            lims = (plt.gca().get_xlim(), plt.gca().get_ylim())
+            mesh = get_mesh(*lims, self.transport_params["n_points"])
+            hmap = get_critic_heatmap(critic, mesh).numpy()
+            plot_heatmap(hmap, *lims, alpha=self.transport_params["hmap_alpha"],
+                        cmap=self.transport_params["cmap"])
+            plt.colorbar(label="Critic output")
 
         plt.legend(loc="upper left")
         plt.tight_layout()

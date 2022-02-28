@@ -5,13 +5,47 @@ from numpy import prod
 from sklearn.datasets import make_moons
 from torch.distributions import MultivariateNormal
 
+from torchvision.datasets import MNIST
+from torch.utils.data import RandomSampler, DataLoader
+import torchvision.transforms as t
 
 __all__ = ["Uniform",
            "Normal",
            "MultivariateNormal",
-           "GaussianMixture",
            "ImageDistribution",
-           "MoonsDistribution"]
+           "MoonsDistribution",
+           "MNISTDistribution",
+           "CurveDistribution",
+           "TensorDatasetDistribution",
+           "gaussian_mixture",
+           "sample_from_gmm_components"]
+
+
+def get_permutation(total_ndim: int, batch_ndim: int, sample_ndim: int) -> list:
+    p = list(range(total_ndim))
+    p[:batch_ndim], p[batch_ndim:batch_ndim+sample_ndim] = \
+    p[sample_ndim:batch_ndim+sample_ndim], p[:sample_ndim]
+    return p
+
+
+def gaussian_mixture(locs, scales=None, probs=None) -> d.MixtureSameFamily:
+    if scales is None:
+        scales = torch.ones_like(locs)
+    if probs is None:
+        probs = torch.ones(locs.size(0)).type_as(locs)
+    mix = d.Categorical(probs)
+    comp = d.Independent(d.Normal(locs, scales), 1)
+    return d.MixtureSameFamily(mix, comp)
+
+
+def sample_from_gmm_components(gmm: d.MixtureSameFamily, sample_shape):
+    components = gmm._component_distribution
+    samples = components.sample(sample_shape)
+
+    permutation = get_permutation(samples.ndim,
+                                  len(components.batch_shape),
+                                  len(sample_shape))
+    return samples.permute(permutation)
 
 
 def clip(tensor):
@@ -30,16 +64,6 @@ class Uniform(d.Uniform):
 class Normal(d.Normal):
     def log_prob(self, value):
         return super().log_prob(value).flatten(-self.loc.ndim).sum(-1)
-
-
-def GaussianMixture(locs, scales=None, probs=None) -> d.Distribution:
-    if scales is None:
-        scales = torch.ones_like(locs)
-    if probs is None:
-        probs = torch.ones(locs.size(0)).type_as(locs)
-    mix = d.Categorical(probs)
-    comp = d.Independent(d.Normal(locs, scales), 1)
-    return d.MixtureSameFamily(mix, comp)
 
 
 def ImageDistribution(image_tensor, scale, center=None, sigma=.01, n_components=1000):
@@ -61,7 +85,7 @@ def ImageDistribution(image_tensor, scale, center=None, sigma=.01, n_components=
     scales = torch.empty_like(locs).fill_(sigma)
     probs = density[density != 0][ix]
 
-    return GaussianMixture(locs, scales, probs)
+    return gaussian_mixture(locs, scales, probs)
 
 
 class MoonsDistribution:
@@ -80,3 +104,56 @@ class MoonsDistribution:
         points = torch.from_numpy(points).float()
         points = self.center + self.scale * points
         return points.view(*sample_shape, -1)
+
+
+class MNISTDistribution:
+    def __init__(self, root="../../data/", transform=t.ToTensor(), num_workers=2):
+        self.mnist = MNIST(root, train=True, transform=transform)
+        self.n_samples = None
+        self.num_workers = num_workers
+
+    def _update_sampler(self):
+        self.sampler = RandomSampler(self.mnist,
+                                     replacement=True,
+                                     num_samples=self.n_samples)
+
+        self.loader = DataLoader(self.mnist,
+                                 batch_size=self.n_samples,
+                                 sampler=self.sampler,
+                                 num_workers=self.num_workers)
+
+    def sample(self, sample_shape):
+        n_samples = int(prod(sample_shape))
+        if self.n_samples != n_samples:
+            self.n_samples = n_samples
+            self._update_sampler()
+
+        samples, labels = next(iter(self.loader))
+        samples = samples.view(*sample_shape, *samples.shape[1:])
+
+        return samples
+
+
+class TensorDatasetDistribution:
+    def __init__(self, features, targets):
+        self.features = features
+        self.targets = targets
+
+    def sample(self, sample_shape):
+        ix = torch.randint(0, self.features.size(0), sample_shape)
+        return self.features[ix]
+
+    def sample_from_class(self, sample_shape, target):
+        class_indices = torch.where(self.targets == target)[0]
+        ix = class_indices[torch.randint(0, class_indices.size(0), sample_shape)]
+        return self.features[ix]
+
+
+class CurveDistribution:
+    def __init__(self, curve):
+        self.curve = curve
+        self.t_distribution = d.Uniform(0, 1)
+
+    def sample(self, sample_shape):
+        t_samples = self.t_distribution.sample(sample_shape)
+        return self.curve(t_samples)

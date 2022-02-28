@@ -7,14 +7,14 @@ __all__ = ["resnet14_d", "resnet18_d", "resnet34_d",
            "resnet14_g", "resnet18_g", "resnet34_g"]
 
 
-def resnet14_d(data_dim: tuple):
-    return ResNetEncoder([1, 1, 1, 1], data_dim, 1)
+def resnet14_d(data_dim: tuple, code_size: int = 1):
+    return ResNetEncoder([1, 1, 1, 1], data_dim, code_size)
 
-def resnet18_d(data_dim: tuple):
-    return ResNetEncoder([2, 2, 2, 2], data_dim, 1)
+def resnet18_d(data_dim: tuple, code_size: int = 1):
+    return ResNetEncoder([2, 2, 2, 2], data_dim, code_size)
 
-def resnet34_d(data_dim: tuple):
-    return ResNetEncoder([3, 4, 6, 3], data_dim, 1)
+def resnet34_d(data_dim: tuple, code_size: int = 1):
+    return ResNetEncoder([3, 4, 6, 3], data_dim, code_size)
 
 def resnet14_g(data_dim: tuple, code_size: int):
     return ResNetDecoder([1, 1, 1, 1], data_dim, code_size)
