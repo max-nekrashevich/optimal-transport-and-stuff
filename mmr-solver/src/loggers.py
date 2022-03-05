@@ -6,13 +6,14 @@ import wandb
 
 
 class Logger:
+    def __init__(self, **kwargs) -> None:
+        self.logger_params = kwargs
+
     def log(self, tag, data, **kwargs):
         raise NotImplementedError
 
 
 class TensorBoardLogger(Logger):
-    def __init__(self, **kwargs):
-        self.logger_params = kwargs
 
     def start(self):
         self.logger = SummaryWriter(**self.logger_params)
@@ -30,13 +31,10 @@ class TensorBoardLogger(Logger):
 
 
 class WandbLogger(Logger):
-    def __init__(self, project, entity):
-        self.project = project
-        self.entity = entity
 
-    def start(self):
-        self.logger = wandb.init(project=self.project,
-                                 entity=self.entity)
+    def start(self, **kwargs):
+        self.logger_params.update(**kwargs)
+        self.logger = wandb.init(**self.logger_params)
 
     def log_hparams(self, hparams):
         wandb.config.update(hparams)
