@@ -7,7 +7,7 @@ from tqdm.auto import trange
 
 class OTSolver:
     def __init__(self, critic, mover, cost,
-                 optimizer=Adam, optimizer_params=dict(lr=5e-5, betas=(.0, .9)),
+                 optimizer=Adam, optimizer_params=dict(lr=5e-5),
                  n_samples=256, n_inner_iter=15,
                  plotter=None, plot_interval=25,
                  logger=None, log_plot_interval=100,

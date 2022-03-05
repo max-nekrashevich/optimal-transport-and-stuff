@@ -38,6 +38,9 @@ class WandbLogger(Logger):
         self.logger = wandb.init(project=self.project,
                                  entity=self.entity)
 
+    def log_hparams(self, hparams):
+        wandb.config.update(hparams)
+
     def log(self, tag, data, step=None, **kwargs):
         self.logger.log({tag: data}, step)
 
