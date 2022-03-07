@@ -3,17 +3,13 @@ import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import torch
 
-from .utils import initializer, sample_from_components
+from .utils import initializer, sample_from_components, get_component_centers
 
 
 def get_mesh(xrange, yrange=None):
     yrange = yrange or xrange
     return torch.meshgrid(torch.linspace(*xrange),
                           torch.linspace(*yrange), indexing="xy")
-
-
-def get_prob_heatmap(distribution, mesh):
-    return distribution.log_prob(torch.dstack(mesh)).exp_()
 
 
 @torch.no_grad()
@@ -59,8 +55,8 @@ def plot_arrows(samples, moved_samples):
 def _plot_density(distribution, kind, lims, n_samples):
     if kind == "pdf":
         mesh = get_mesh(*lims)
-        hmap = get_prob_heatmap(distribution, mesh).numpy()
-        plot_heatmap(hmap, *lims)
+        heatmap = distribution.log_prob(torch.dstack(mesh)).exp_().numpy()
+        plot_heatmap(heatmap, *lims)
         plt.colorbar(label="Density")
     elif kind == "samples":
         samples = distribution.sample((n_samples,))
@@ -95,7 +91,8 @@ def plot_pdfs(source, target, source_dim, target_dim, *,
     return figure
 
 
-def plot_transport(x, y, h_x, critic, *,
+def plot_transport(x, y, h_x, *,
+                   critic=None,
                    figsize=(9, 7),
                    x_color="blue",
                    y_color="green",
@@ -105,8 +102,8 @@ def plot_transport(x, y, h_x, critic, *,
                    cmap=cm.PRGn,
                    hmap_alpha=.5):
     figure = plt.figure(figsize=figsize)
-    source_dim = x.size(1)
-    target_dim = y.size(1)
+    source_dim = x.shape[1:]
+    target_dim = y.shape[1:]
 
     if source_dim == target_dim:
         plot_samples(x, color=x_color,
@@ -120,7 +117,7 @@ def plot_transport(x, y, h_x, critic, *,
     if source_dim == target_dim:
         plot_arrows(x[:n_arrows], h_x[:n_arrows])
 
-    if target_dim == 2:
+    if target_dim == (2,) and critic:
         lims = (plt.gca().get_xlim(), plt.gca().get_ylim())
         mesh = get_mesh(*lims)
         hmap = get_critic_heatmap(critic, mesh).numpy()
@@ -129,6 +126,58 @@ def plot_transport(x, y, h_x, critic, *,
         plt.colorbar(label="Critic score")
 
     plt.legend(loc="best")
+    plt.tight_layout()
+    return figure
+
+
+def plot_transport_components(x, y, h_x, labels, *,
+                   critic=None,
+                   figsize=(9, 7),
+                   colors=None,
+                   y_color="gray",
+                   dots_alpha=.5,
+                   aggregate_arrows=True,
+                   legend=True,
+                   n_arrows=128,
+                   cmap=cm.PRGn,
+                   hmap_alpha=.5):
+    colors = cycle(colors or [f"C{i}" for i in range(10)])
+    figure = plt.figure(figsize=figsize)
+    source_dim = x.shape[1:]
+    target_dim = y.shape[1:]
+    classes = labels.unique()
+
+    if source_dim == target_dim:
+        for label, color in zip(classes, colors):
+            plot_samples(x[labels == label], color=color,
+                            alpha=dots_alpha, label=f"Source samples ({label})")
+
+    plot_samples(y, color=y_color,
+                    alpha=dots_alpha, label="Target samples")
+    for label, color in zip(classes, colors):
+        plot_samples(h_x[labels == label], color=color, marker="v",
+                        alpha=dots_alpha, label=f"Moved samples ({label})")
+
+
+    if source_dim == target_dim:
+        if aggregate_arrows:
+            arrows_from = get_component_centers(x, labels)
+            arrows_to = get_component_centers(h_x, labels)
+        else:
+            ix = torch.randint(0, x.size(0), (n_arrows,))
+            arrows_from = x[ix]
+            arrows_to = h_x[ix]
+        plot_arrows(arrows_from, arrows_to)
+
+    if target_dim == (2,) and critic:
+        lims = (plt.gca().get_xlim(), plt.gca().get_ylim())
+        mesh = get_mesh(*lims)
+        heatmap = get_critic_heatmap(critic, mesh).numpy()
+        plot_heatmap(heatmap, *lims, alpha=hmap_alpha,
+                     cmap=cmap)
+        plt.colorbar(label="Critic score")
+
+    if legend: plt.legend(loc="best")
     plt.tight_layout()
     return figure
 
@@ -183,7 +232,8 @@ class SyntheticPlotter(Plotter):
                         )
 
     def plot_step(self, x, y, h_x, *, critic, **kwargs):
-        return plot_transport(x, y, h_x, critic,
+        return plot_transport(x, y, h_x,
+                              critic=critic,
                               figsize=self.transport_figsize,
                               x_color=self.transport_x_color,
                               y_color=self.transport_y_color,
@@ -194,10 +244,10 @@ class SyntheticPlotter(Plotter):
                               hmap_alpha=self.transport_hmap_alpha)
 
     @torch.no_grad()
-    def plot_end(self, source, target, *, mover, **kwargs):
+    def plot_end(self, source, target, *, mover, device=None, **kwargs):
         x = source.sample((self.final_n_samples,))
         y = target.sample((self.final_n_samples,))
-        h_x = mover(x)
+        h_x = mover(x.to(device))
 
         return plot_transport(x, y, h_x, critic,
                               figsize=self.final_figsize,
@@ -228,7 +278,8 @@ class ComponentPlotter(SyntheticPlotter):
                  transport_cmap=cm.PRGn,
                  transport_hmap_alpha=.5,
                  final_figsize=(9, 7),
-                 final_colorlist=None,
+                 final_colors=None,
+                 final_legend=True,
                  final_dots_alpha=.5,
                  final_y_color="gray",
                  final_n_samples=512):
@@ -238,33 +289,21 @@ class ComponentPlotter(SyntheticPlotter):
             self.pdf_lims_source = (pdf_lims_source,)
         if pdf_lims_target and not isinstance(pdf_kind_target[0], tuple):
             self.pdf_lims_target = (pdf_lims_target,)
-        self.final_colorlist = final_colorlist or [f"C{i}" for i in range(10)]
+        self.final_colors = final_colors or [f"C{i}" for i in range(10)]
 
     @torch.no_grad()
     def plot_end(self, source, target, *, mover, device=None, **kwargs):
-        figure = plt.figure(figsize=self.final_figsize)
-        x_components = sample_from_components(source, (self.final_n_samples,))
+        x_components, x_labels = sample_from_components(source, (self.final_n_samples,))
         y = target.sample((self.final_n_samples,))
-        batch_shape = x_components.shape[:2]
-        h_x_components = mover(x_components.flatten(end_dim=1).to(device)).unflatten(0, batch_shape)
+        h_x_components = mover(x_components.to(device))
 
-        source_dim = x_components.size(2)
-        target_dim = y.size(1)
+        return plot_transport_components(x_components, y, h_x_components, x_labels,
+                                         critic=None,
+                                         figsize=self.final_figsize,
+                                         colors=self.final_colors,
+                                         y_color=self.final_y_color,
+                                         dots_alpha=self.final_dots_alpha,
+                                         aggregate_arrows=True,
+                                         legend=self.final_legend,
+                                        )
 
-
-        if source_dim == target_dim:
-            for x, color in zip(x_components, cycle(self.final_colorlist)):
-                plot_samples(x, color=color,
-                                alpha=self.final_dots_alpha)
-
-        plot_samples(y, color=self.final_y_color,
-                        alpha=self.final_dots_alpha)
-        for h_x, color in zip(h_x_components, cycle(self.final_colorlist)):
-            plot_samples(h_x, color=color,
-                            alpha=self.final_dots_alpha)
-
-        if source_dim == target_dim:
-            plot_arrows(x_components.mean(1), h_x_components.mean(1))
-
-        plt.tight_layout()
-        return figure

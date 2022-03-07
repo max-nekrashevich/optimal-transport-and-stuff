@@ -120,17 +120,17 @@ class DatasetDistribution:
 
 
 class TensorDatasetDistribution:
-    def __init__(self, features: torch.Tensor, targets: torch.Tensor):
+    def __init__(self, features: torch.Tensor, labels: torch.Tensor):
         self.features = features
-        self.targets = targets
-        self.classes = targets.unique()
+        self.labels = labels
+        self.classes = labels.unique()
 
     def sample(self, sample_shape):
         ix = torch.randint(0, self.features.size(0), sample_shape)
         return self.features[ix]
 
-    def sample_from_class(self, sample_shape, target):
-        class_indices = torch.where(self.targets == target)[0]
+    def sample_from_class(self, sample_shape, label):
+        class_indices = torch.where(self.labels == label)[0]
         ix = class_indices[torch.randint(0, class_indices.size(0), sample_shape)]
         return self.features[ix]
 

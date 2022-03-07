@@ -71,34 +71,47 @@ def get_permutation(total_ndim: int, batch_ndim: int, sample_ndim: int) -> list:
     p[sample_ndim:batch_ndim+sample_ndim], p[:sample_ndim]
     return p
 
+def repeat_labels(labels, shape):
+    ndim = len(shape)
+    permutation = get_permutation(ndim + 1, 1, ndim)
+    return labels.repeat(*shape, 1).permute(permutation).flatten(end_dim=1)
 
-def sample_from_tensordataset_classes(distribution: TensorDatasetDistribution,
-                                      sample_shape) -> torch.Tensor:
+def sample_from_tensordataset_classes(distribution: TensorDatasetDistribution, sample_shape):
     samples = []
     for target in distribution.classes:
         samples.append(distribution.sample_from_class(sample_shape, target))
+    labels = repeat_labels(distribution.classes, sample_shape)
 
-    return torch.stack(samples)
+    return torch.cat(samples), labels
 
 
 def sample_from_gmm_components(gmm: MixtureSameFamily,
-                               sample_shape) -> torch.Tensor:
+                               sample_shape):
     components = gmm._component_distribution
     samples = components.sample(sample_shape)
 
     permutation = get_permutation(samples.ndim,
                                   len(components.batch_shape),
                                   len(sample_shape))
-    return samples.permute(permutation)
+
+    labels = repeat_labels(torch.arange(0, samples.size(1)), sample_shape)
+    return samples.permute(permutation).flatten(end_dim=1), labels
 
 
-def sample_from_components(distribution, sample_shape) -> torch.Tensor:
+def sample_from_components(distribution, sample_shape):
     if isinstance(distribution, TensorDatasetDistribution):
         return sample_from_tensordataset_classes(distribution, sample_shape)
-    # if isinstance(distribution, MixtureSameFamily):
-    return sample_from_gmm_components(distribution, sample_shape)
+    if isinstance(distribution, MixtureSameFamily):
+        return sample_from_gmm_components(distribution, sample_shape)
+    return distribution.sample(sample_shape), torch.full(sample_shape, 0)
 
 
 def product_dict(dct):
     for values in itertools.product(*dct.values()):
         yield dict(zip(dct.keys(), values))
+
+def get_component_centers(data: torch.Tensor, labels: torch.Tensor):
+    centers = []
+    for label in labels.unique():
+        centers.append(data[labels == label].mean(0))
+    return torch.stack(centers)
