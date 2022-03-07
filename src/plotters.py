@@ -144,7 +144,7 @@ class Plotter:
     def plot_step(self, x, y, h_x, **kwargs):
         raise NotImplementedError
 
-    def plot_end(self, source, target, critic, mover):
+    def plot_end(self, source, target, **kwargs):
         raise NotImplementedError
 
 
@@ -194,7 +194,7 @@ class SyntheticPlotter(Plotter):
                               hmap_alpha=self.transport_hmap_alpha)
 
     @torch.no_grad()
-    def plot_end(self, source, target, critic, mover):
+    def plot_end(self, source, target, *, mover, **kwargs):
         x = source.sample((self.final_n_samples,))
         y = target.sample((self.final_n_samples,))
         h_x = mover(x)
@@ -241,12 +241,12 @@ class ComponentPlotter(SyntheticPlotter):
         self.final_colorlist = final_colorlist or [f"C{i}" for i in range(10)]
 
     @torch.no_grad()
-    def plot_end(self, source, target, critic, mover):
+    def plot_end(self, source, target, *, mover, device=None, **kwargs):
         figure = plt.figure(figsize=self.final_figsize)
         x_components = sample_from_components(source, (self.final_n_samples,))
         y = target.sample((self.final_n_samples,))
         batch_shape = x_components.shape[:2]
-        h_x_components = mover(x_components.flatten(end_dim=1)).unflatten(0, batch_shape)
+        h_x_components = mover(x_components.flatten(end_dim=1).to(device)).unflatten(0, batch_shape)
 
         source_dim = x_components.size(2)
         target_dim = y.size(1)

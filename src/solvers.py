@@ -100,7 +100,7 @@ class OTSolver:
             plot_widget.close()
 
         if self.plotter:
-            figure = self.plotter.plot_end(source, target, self.critic, self.mover)
+            figure = self.plotter.plot_end(source, target, mover=self.mover, device=self.device)
             plt.show(block=False)
 
             self._log("Transport/Final", figure, advance=False, close=True)
