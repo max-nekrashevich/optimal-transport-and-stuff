@@ -17,17 +17,18 @@ __all__ = ["Uniform",
            "DatasetDistribution",
            "CurveDistribution",
            "TensorDatasetDistribution",
-           "gaussian_mixture"]
+           "GaussianMixture"]
 
 
-def gaussian_mixture(locs, scales=None, probs=None) -> d.MixtureSameFamily:
-    if scales is None:
-        scales = torch.ones_like(locs)
-    if probs is None:
-        probs = torch.ones(locs.size(0)).type_as(locs)
-    mix = d.Categorical(probs)
-    comp = d.Independent(d.Normal(locs, scales), 1)
-    return d.MixtureSameFamily(mix, comp)
+class GaussianMixture(d.MixtureSameFamily):
+    def __init__(self, locs, scales=None, probs=None):
+        if scales is None:
+            scales = torch.ones_like(locs)
+        if probs is None:
+            probs = torch.ones(locs.size(0)).type_as(locs)
+        mixture_distribution = d.Categorical(probs)
+        component_distribution = d.Independent(d.Normal(locs, scales), 1)
+        super().__init__(mixture_distribution, component_distribution)
 
 
 def clip(mask):
@@ -67,7 +68,7 @@ def ImageDistribution(image_tensor, scale, center=None, sigma=.01, n_components=
     scales = torch.empty_like(locs).fill_(sigma)
     probs = density[density != 0][ix]
 
-    return gaussian_mixture(locs, scales, probs)
+    return GaussianMixture(locs, scales, probs)
 
 
 class MoonsDistribution:
@@ -115,7 +116,6 @@ class DatasetDistribution:
 
         if return_labels:
             return samples, labels
-
         return samples
 
 
@@ -125,13 +125,15 @@ class TensorDatasetDistribution:
         self.labels = labels
         self.classes = labels.unique()
 
-    def sample(self, sample_shape):
-        ix = torch.randint(0, self.features.size(0), sample_shape)
-        return self.features[ix]
+    def sample(self, sample_shape, *, component=None, return_labels=False):
+        if component is not None:
+            component_indices = torch.where(self.labels == component)[0]
+            ix = component_indices[torch.randint(0, component_indices.size(0), sample_shape)]
+        else:
+            ix = torch.randint(0, self.features.size(0), sample_shape)
 
-    def sample_from_class(self, sample_shape, label):
-        class_indices = torch.where(self.labels == label)[0]
-        ix = class_indices[torch.randint(0, class_indices.size(0), sample_shape)]
+        if return_labels:
+            return self.features[ix], self.labels[ix]
         return self.features[ix]
 
 

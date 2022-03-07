@@ -78,8 +78,8 @@ def repeat_labels(labels, shape):
 
 def sample_from_tensordataset_classes(distribution: TensorDatasetDistribution, sample_shape):
     samples = []
-    for target in distribution.classes:
-        samples.append(distribution.sample_from_class(sample_shape, target))
+    for label in distribution.classes:
+        samples.append(distribution.sample(sample_shape, component=label))
     labels = repeat_labels(distribution.classes, sample_shape)
 
     return torch.cat(samples), labels
