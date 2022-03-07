@@ -1,8 +1,10 @@
+from itertools import cycle
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import torch
 
 from .utils import initializer
+from .distributions import sample_from_gmm_components
 
 
 def get_mesh(xrange, yrange=None):
@@ -149,7 +151,7 @@ class Plotter:
 
 class SyntheticPlotter(Plotter):
     @initializer
-    def __init__(self, source_dim, target_dim,
+    def __init__(self, source_dim, target_dim, *,
                  pdf_figsize=(9, 4),
                  pdf_kind_source="samples",
                  pdf_lims_source=None,
@@ -164,9 +166,9 @@ class SyntheticPlotter(Plotter):
                  transport_n_arrows=128,
                  transport_cmap=cm.PRGn,
                  transport_hmap_alpha=.5,
+                 final_figsize=(9, 7),
                  final_n_samples=512,
                  final_n_arrows=512):
-        super().__init__(source_dim, target_dim)
         assert pdf_kind_source in (None, "pdf", "samples")
         assert pdf_kind_target in (None, "pdf", "samples")
         if pdf_lims_source and not isinstance(pdf_kind_source[0], tuple):
@@ -199,7 +201,7 @@ class SyntheticPlotter(Plotter):
         h_x = mover(x)
 
         return plot_transport(x, y, h_x, critic,
-                              figsize=self.transport_figsize,
+                              figsize=self.final_figsize,
                               x_color=self.transport_x_color,
                               y_color=self.transport_y_color,
                               h_x_color=self.transport_h_x_color,
@@ -207,3 +209,63 @@ class SyntheticPlotter(Plotter):
                               n_arrows=self.final_n_arrows,
                               cmap=self.transport_cmap,
                               hmap_alpha=self.transport_hmap_alpha)
+
+
+class GMMPlotter(SyntheticPlotter):
+    @initializer
+    def __init__(self, source_dim, target_dim, *,
+                 pdf_figsize=(9, 4),
+                 pdf_kind_source="samples",
+                 pdf_lims_source=None,
+                 pdf_kind_target="samples",
+                 pdf_lims_target=None,
+                 pdf_n_samples=50,
+                 transport_figsize=(9, 7),
+                 transport_x_color="blue",
+                 transport_y_color="green",
+                 transport_h_x_color="purple",
+                 transport_dots_alpha=.5,
+                 transport_n_arrows=128,
+                 transport_cmap=cm.PRGn,
+                 transport_hmap_alpha=.5,
+                 final_figsize=(9, 7),
+                 final_colorlist=None,
+                 final_dots_alpha=.5,
+                 final_y_color="gray",
+                 final_n_samples=512):
+        assert pdf_kind_source in (None, "pdf", "samples")
+        assert pdf_kind_target in (None, "pdf", "samples")
+        if pdf_lims_source and not isinstance(pdf_kind_source[0], tuple):
+            self.pdf_lims_source = (pdf_lims_source,)
+        if pdf_lims_target and not isinstance(pdf_kind_target[0], tuple):
+            self.pdf_lims_target = (pdf_lims_target,)
+        self.final_colorlist = final_colorlist or [f"C{i}" for i in range(10)]
+
+    @torch.no_grad()
+    def plot_end(self, source, target, critic, mover):
+        figure = plt.figure(figsize=self.final_figsize)
+        n_samples = self.final_n_samples
+        x_components = sample_from_gmm_components(source, (n_samples,))
+        y = target.sample((n_samples,))
+        h_x_components = mover(x_components)
+
+        source_dim = x_components.size(2)
+        target_dim = y.size(1)
+
+
+        if source_dim == target_dim:
+            for x, color in zip(x_components, cycle(self.final_colorlist)):
+                plot_samples(x, color=color,
+                                alpha=self.final_dots_alpha)
+
+        plot_samples(y, color=self.final_y_color,
+                        alpha=self.final_dots_alpha)
+        for h_x, color in zip(h_x_components, cycle(self.final_colorlist)):
+            plot_samples(h_x, color=color,
+                            alpha=self.final_dots_alpha)
+
+        if source_dim == target_dim:
+            plot_arrows(x_components.mean(1), h_x_components.mean(1))
+
+        plt.tight_layout()
+        return figure

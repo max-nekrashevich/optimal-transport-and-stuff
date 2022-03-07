@@ -32,15 +32,13 @@ class OTSolver:
         self.log_plot_interval = log_plot_interval
         self.device = device
 
-        self._global_step = 1
-
     def fit(self, source, target, n_iter):
         if self.plotter:
             figure = self.plotter.plot_start(source, target)
             plt.show(block=False)
 
             if self.logger and figure:
-                self.logger.log("PDFs", figure, close=True)
+                self.logger.log("PDFs", figure, advance=False, close=True)
 
             if self.widget:
                 plot_widget = Output()
@@ -66,16 +64,6 @@ class OTSolver:
             critic_loss.backward()
             self._critic_opt.step()
 
-            with torch.no_grad():
-                loss = self.critic(y).mean() + mover_loss
-
-                if self.show_progress:
-                    progress_widget.set_postfix({"loss": loss.item()})
-
-                if self.logger:
-                    self.logger.log("loss", loss.item(), self._global_step + step)
-                    self.logger.log("cost", cost.item(), self._global_step + step)
-
             if self.plotter and step % self.plot_interval == 0:
 
                 figure = self.plotter.plot_step(x, y, h_x, critic=self.critic)
@@ -96,7 +84,17 @@ class OTSolver:
 
                 if self.logger and step % self.log_plot_interval == 0:
                     self.logger.log("Transport/Progress", figure,
-                                    self._global_step + step, close=True)
+                                    advance=False, close=True)
+
+            with torch.no_grad():
+                loss = self.critic(y).mean() + mover_loss
+
+                if self.show_progress:
+                    progress_widget.set_postfix({"loss": loss.item()})
+
+                if self.logger:
+                    self.logger.log("loss", loss.item(), advance=False)
+                    self.logger.log("cost", cost.item())
 
         if self.widget:
             plot_widget.close()
@@ -106,7 +104,4 @@ class OTSolver:
             plt.show(block=False)
 
             if self.logger:
-                self.logger.log("Transport/Final", figure,
-                                self._global_step + n_iter, close=True)
-
-        self._global_step += n_iter
+                self.logger.log("Transport/Final", figure, advance=False, close=True)
