@@ -17,15 +17,7 @@ __all__ = ["Uniform",
            "DatasetDistribution",
            "CurveDistribution",
            "TensorDatasetDistribution",
-           "gaussian_mixture",
-           "sample_from_gmm_components"]
-
-
-def get_permutation(total_ndim: int, batch_ndim: int, sample_ndim: int) -> list:
-    p = list(range(total_ndim))
-    p[:batch_ndim], p[batch_ndim:batch_ndim+sample_ndim] = \
-    p[sample_ndim:batch_ndim+sample_ndim], p[:sample_ndim]
-    return p
+           "gaussian_mixture"]
 
 
 def gaussian_mixture(locs, scales=None, probs=None) -> d.MixtureSameFamily:
@@ -38,19 +30,9 @@ def gaussian_mixture(locs, scales=None, probs=None) -> d.MixtureSameFamily:
     return d.MixtureSameFamily(mix, comp)
 
 
-def sample_from_gmm_components(gmm: d.MixtureSameFamily, sample_shape):
-    components = gmm._component_distribution
-    samples = components.sample(sample_shape)
-
-    permutation = get_permutation(samples.ndim,
-                                  len(components.batch_shape),
-                                  len(sample_shape))
-    return samples.permute(permutation)
-
-
-def clip(tensor):
-    i, j = torch.where(tensor)
-    return tensor[i.min():i.max(), j.min():j.max()]
+def clip(mask):
+    i, j = torch.where(mask)
+    return mask[i.min():i.max(), j.min():j.max()]
 
 
 class Uniform(d.Uniform):
@@ -138,9 +120,10 @@ class DatasetDistribution:
 
 
 class TensorDatasetDistribution:
-    def __init__(self, features, targets):
+    def __init__(self, features: torch.Tensor, targets: torch.Tensor):
         self.features = features
         self.targets = targets
+        self.classes = targets.unique()
 
     def sample(self, sample_shape):
         ix = torch.randint(0, self.features.size(0), sample_shape)

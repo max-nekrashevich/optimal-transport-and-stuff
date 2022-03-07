@@ -1,9 +1,14 @@
 import functools
 import inspect
+import itertools
 
 import numpy as np
 
 import torch
+from torch.distributions import MixtureSameFamily
+
+from .distributions import TensorDatasetDistribution
+
 
 def uniform_circle(n_samples: int) -> torch.Tensor:
     theta = 2 * torch.pi * torch.arange(n_samples) / n_samples
@@ -58,3 +63,42 @@ def initializer(func):
                     setattr(self, name, val)
         func(self, *args, **kwargs)
     return wrapper
+
+
+def get_permutation(total_ndim: int, batch_ndim: int, sample_ndim: int) -> list:
+    p = list(range(total_ndim))
+    p[:batch_ndim], p[batch_ndim:batch_ndim+sample_ndim] = \
+    p[sample_ndim:batch_ndim+sample_ndim], p[:sample_ndim]
+    return p
+
+
+def sample_from_tensordataset_classes(distribution: TensorDatasetDistribution,
+                                      sample_shape) -> torch.Tensor:
+    samples = []
+    for target in distribution.classes:
+        samples.append(distribution.sample_from_class(sample_shape, target))
+
+    return torch.stack(samples)
+
+
+def sample_from_gmm_components(gmm: MixtureSameFamily,
+                               sample_shape) -> torch.Tensor:
+    components = gmm._component_distribution
+    samples = components.sample(sample_shape)
+
+    permutation = get_permutation(samples.ndim,
+                                  len(components.batch_shape),
+                                  len(sample_shape))
+    return samples.permute(permutation)
+
+
+def sample_from_components(distribution, sample_shape) -> torch.Tensor:
+    if isinstance(distribution, TensorDatasetDistribution):
+        return sample_from_tensordataset_classes(distribution, sample_shape)
+    # if isinstance(distribution, MixtureSameFamily):
+    return sample_from_gmm_components(distribution, sample_shape)
+
+
+def product_dict(dct):
+    for values in itertools.product(*dct.values()):
+        yield dict(zip(dct.keys(), values))

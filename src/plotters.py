@@ -3,8 +3,7 @@ import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import torch
 
-from .utils import initializer
-from .distributions import sample_from_gmm_components
+from .utils import initializer, sample_from_components
 
 
 def get_mesh(xrange, yrange=None):
@@ -211,7 +210,7 @@ class SyntheticPlotter(Plotter):
                               hmap_alpha=self.transport_hmap_alpha)
 
 
-class GMMPlotter(SyntheticPlotter):
+class ComponentPlotter(SyntheticPlotter):
     @initializer
     def __init__(self, source_dim, target_dim, *,
                  pdf_figsize=(9, 4),
@@ -244,10 +243,10 @@ class GMMPlotter(SyntheticPlotter):
     @torch.no_grad()
     def plot_end(self, source, target, critic, mover):
         figure = plt.figure(figsize=self.final_figsize)
-        n_samples = self.final_n_samples
-        x_components = sample_from_gmm_components(source, (n_samples,))
-        y = target.sample((n_samples,))
-        h_x_components = mover(x_components)
+        x_components = sample_from_components(source, (self.final_n_samples,))
+        y = target.sample((self.final_n_samples,))
+        batch_shape = x_components.shape[:2]
+        h_x_components = mover(x_components.flatten(end_dim=1)).unflatten(0, batch_shape)
 
         source_dim = x_components.size(2)
         target_dim = y.size(1)

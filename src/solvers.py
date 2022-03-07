@@ -32,13 +32,16 @@ class OTSolver:
         self.log_plot_interval = log_plot_interval
         self.device = device
 
+    def _log(self, tag, data, **kwargs):
+        if self.logger and data:
+            self.logger.log(tag, data, **kwargs)
+
     def fit(self, source, target, n_iter):
         if self.plotter:
             figure = self.plotter.plot_start(source, target)
             plt.show(block=False)
 
-            if self.logger and figure:
-                self.logger.log("PDFs", figure, advance=False, close=True)
+            self._log("PDFs", figure, advance=False, close=True)
 
             if self.widget:
                 plot_widget = Output()
@@ -65,7 +68,6 @@ class OTSolver:
             self._critic_opt.step()
 
             if self.plotter and step % self.plot_interval == 0:
-
                 figure = self.plotter.plot_step(x, y, h_x, critic=self.critic)
                 if self.widget:
                     with plot_widget:
@@ -82,9 +84,8 @@ class OTSolver:
                 else:
                     plt.close()
 
-                if self.logger and step % self.log_plot_interval == 0:
-                    self.logger.log("Transport/Progress", figure,
-                                    advance=False, close=True)
+                if step % self.log_plot_interval == 0:
+                    self._log("Transport/Progress", figure, advance=False, close=True)
 
             with torch.no_grad():
                 loss = self.critic(y).mean() + mover_loss
@@ -92,9 +93,8 @@ class OTSolver:
                 if self.show_progress:
                     progress_widget.set_postfix({"loss": loss.item()})
 
-                if self.logger:
-                    self.logger.log("loss", loss.item(), advance=False)
-                    self.logger.log("cost", cost.item())
+                self._log("loss", loss.item(), advance=False)
+                self._log("cost", cost.item())
 
         if self.widget:
             plot_widget.close()
@@ -103,5 +103,4 @@ class OTSolver:
             figure = self.plotter.plot_end(source, target, self.critic, self.mover)
             plt.show(block=False)
 
-            if self.logger:
-                self.logger.log("Transport/Final", figure, advance=False, close=True)
+            self._log("Transport/Final", figure, advance=False, close=True)
