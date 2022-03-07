@@ -14,7 +14,7 @@ __all__ = ["Uniform",
            "MultivariateNormal",
            "ImageDistribution",
            "MoonsDistribution",
-           "MNISTDistribution",
+           "DatasetDistribution",
            "CurveDistribution",
            "TensorDatasetDistribution",
            "gaussian_mixture",
@@ -106,23 +106,23 @@ class MoonsDistribution:
         return points.view(*sample_shape, -1)
 
 
-class MNISTDistribution:
-    def __init__(self, root="../../data/", transform=t.ToTensor(), num_workers=2):
-        self.mnist = MNIST(root, train=True, transform=transform)
+class DatasetDistribution:
+    def __init__(self, dataset, num_workers=2):
+        self.dataset = dataset
         self.n_samples = None
         self.num_workers = num_workers
 
     def _update_sampler(self):
-        self.sampler = RandomSampler(self.mnist,
+        self.sampler = RandomSampler(self.dataset,
                                      replacement=True,
                                      num_samples=self.n_samples)
 
-        self.loader = DataLoader(self.mnist,
+        self.loader = DataLoader(self.dataset,
                                  batch_size=self.n_samples,
                                  sampler=self.sampler,
                                  num_workers=self.num_workers)
 
-    def sample(self, sample_shape):
+    def sample(self, sample_shape, return_labels=False):
         n_samples = int(prod(sample_shape))
         if self.n_samples != n_samples:
             self.n_samples = n_samples
@@ -130,6 +130,9 @@ class MNISTDistribution:
 
         samples, labels = next(iter(self.loader))
         samples = samples.view(*sample_shape, *samples.shape[1:])
+
+        if return_labels:
+            return samples, labels
 
         return samples
 

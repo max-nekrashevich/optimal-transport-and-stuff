@@ -1,8 +1,10 @@
+import matplotlib.pyplot as plt
 import torch
 
+from ipywidgets import Output
+from IPython.display import clear_output, display
 from torch.optim import Adam
 from tqdm.auto import trange
-
 
 
 class OTSolver:
@@ -11,7 +13,7 @@ class OTSolver:
                  n_samples=256, n_inner_iter=15,
                  plotter=None, plot_interval=25,
                  logger=None, log_plot_interval=100,
-                 progress_bar=True, device=None):
+                 progress_bar=True, widget=True, device=None):
         self.critic = critic.to(device)
         self.mover = mover.to(device)
         self.cost = cost
@@ -23,22 +25,24 @@ class OTSolver:
         self.logger = logger
 
         self.show_progress = progress_bar
+        self.widget = widget
         self.n_samples = n_samples
         self.n_inner_iter = n_inner_iter
         self.plot_interval = plot_interval
         self.log_plot_interval = log_plot_interval
         self.device = device
 
-        self._global_step = 1
-
     def fit(self, source, target, n_iter):
         if self.plotter:
-            figure = self.plotter.plot_pdfs(source, target)
+            figure = self.plotter.plot_start(source, target)
+            plt.show(block=False)
 
             if self.logger and figure:
-                self.logger.log("PDFs", figure, close=True)
+                self.logger.log("PDFs", figure, advance=False, close=True)
 
-            self.plotter.init_widget()
+            if self.widget:
+                plot_widget = Output()
+                display(plot_widget)
 
         progress_widget = trange(n_iter, disable=not self.show_progress)
 
@@ -60,6 +64,28 @@ class OTSolver:
             critic_loss.backward()
             self._critic_opt.step()
 
+            if self.plotter and step % self.plot_interval == 0:
+
+                figure = self.plotter.plot_step(x, y, h_x, critic=self.critic)
+                if self.widget:
+                    with plot_widget:
+                        try:
+                            clear_output(wait=True)
+                            plt.show(block=False)
+                            interrupted = False
+                        except KeyboardInterrupt:
+                            plot_widget.close()
+                            interrupted = True
+
+                    if interrupted:
+                        raise KeyboardInterrupt
+                else:
+                    plt.close()
+
+                if self.logger and step % self.log_plot_interval == 0:
+                    self.logger.log("Transport/Progress", figure,
+                                    advance=False, close=True)
+
             with torch.no_grad():
                 loss = self.critic(y).mean() + mover_loss
 
@@ -67,22 +93,15 @@ class OTSolver:
                     progress_widget.set_postfix({"loss": loss.item()})
 
                 if self.logger:
-                    self.logger.log("loss", loss.item(), self._global_step + step)
-                    self.logger.log("cost", cost.item(), self._global_step + step)
+                    self.logger.log("loss", loss.item(), advance=False)
+                    self.logger.log("cost", cost.item())
 
-            if self.plotter and step % self.plot_interval == 0:
-                figure = self.plotter.update_widget(x, y, h_x, self.critic)
-
-                if self.logger and step % self.log_plot_interval == 0:
-                    self.logger.log("Transport/Progress", figure,
-                                    self._global_step + step, close=True)
+        if self.widget:
+            plot_widget.close()
 
         if self.plotter:
-            self.plotter.close_widget()
-            figure = self.plotter.plot_transport(x, y, h_x, self.critic)
+            figure = self.plotter.plot_end(source, target, self.critic, self.mover)
+            plt.show(block=False)
 
             if self.logger:
-                self.logger.log("Transport/Final", figure,
-                                self._global_step + n_iter, close=True)
-
-        self._global_step += n_iter
+                self.logger.log("Transport/Final", figure, advance=False, close=True)
