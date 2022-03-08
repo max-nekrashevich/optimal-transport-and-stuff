@@ -9,12 +9,12 @@ from IPython.display import clear_output, display
 from .utils import get_projection
 
 
-def plot_heatmap(hmap, xlim, ylim, **imshow_kwargs):
-    yticks, xticks = hmap.shape
+def plot_heatmap(heatmap, xlim, ylim, **imshow_kwargs):
+    yticks, xticks = heatmap.shape
     dx = .5 * (xlim[1] - xlim[0]) / (xticks - 1)
     dy = .5 * (ylim[1] - ylim[0]) / (yticks - 1)
     extent = (xlim[0] - dx, xlim[1] + dx, ylim[0] - dy, ylim[1] + dy)
-    plt.imshow(hmap[::-1, :], extent=extent, **imshow_kwargs)
+    plt.imshow(heatmap[::-1, :], extent=extent, **imshow_kwargs)
 
 
 @torch.no_grad()
@@ -97,9 +97,9 @@ class SimplePlotter(Plotter):
             y_color="green",
             h_x_color="purple",
             dots_alpha=.5,
-            hmap_alpha=.5,
+            heatmap_alpha=.5,
             n_arrows=128,
-            cmap=cm.PRGn,
+            colormap=cm.PRGn,
             n_points=50,
         )
         self.step_params.update(step_params)
@@ -107,8 +107,8 @@ class SimplePlotter(Plotter):
     def _plot_density(self, distribution, kind, lims):
         if kind == "pdf":
             mesh = get_mesh(*lims, self.pdf_params["n_points"])
-            hmap = get_prob_heatmap(distribution, mesh).numpy()
-            plot_heatmap(hmap, *lims)
+            heatmap = get_prob_heatmap(distribution, mesh).numpy()
+            plot_heatmap(heatmap, *lims)
             if self.pdf_params["colorbar"]:
                 plt.colorbar(label="Density")
         elif kind == "samples":
@@ -164,9 +164,9 @@ class SimplePlotter(Plotter):
         if self.target_dim == 2:
             lims = (plt.gca().get_xlim(), plt.gca().get_ylim())
             mesh = get_mesh(*lims, self.step_params["n_points"])
-            hmap = get_critic_heatmap(critic, mesh).numpy()
-            plot_heatmap(hmap, *lims, alpha=self.step_params["hmap_alpha"],
-                        cmap=self.step_params["cmap"])
+            heatmap = get_critic_heatmap(critic, mesh).numpy()
+            plot_heatmap(heatmap, *lims, alpha=self.step_params["heatmap_alpha"],
+                        colormap=self.step_params["colormap"])
             plt.colorbar(label="Critic output")
 
         plt.legend(loc="upper left")

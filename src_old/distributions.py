@@ -9,31 +9,16 @@ from torchvision.datasets import MNIST
 from torch.utils.data import RandomSampler, DataLoader
 import torchvision.transforms as t
 
+
 __all__ = ["Uniform",
            "Normal",
            "MultivariateNormal",
-           "ImageDistribution",
-           "MoonsDistribution",
+           "image_uniform",
+           "MoonDistribution",
            "DatasetDistribution",
            "CurveDistribution",
            "TensorDatasetDistribution",
            "GaussianMixture"]
-
-
-class GaussianMixture(d.MixtureSameFamily):
-    def __init__(self, locs, scales=None, probs=None):
-        if scales is None:
-            scales = torch.ones_like(locs)
-        if probs is None:
-            probs = torch.ones(locs.size(0)).type_as(locs)
-        mixture_distribution = d.Categorical(probs)
-        component_distribution = d.Independent(d.Normal(locs, scales), 1)
-        super().__init__(mixture_distribution, component_distribution)
-
-
-def clip(mask):
-    i, j = torch.where(mask)
-    return mask[i.min():i.max(), j.min():j.max()]
 
 
 class Uniform(d.Uniform):
@@ -49,8 +34,26 @@ class Normal(d.Normal):
         return super().log_prob(value).flatten(-self.loc.ndim).sum(-1)
 
 
-def ImageDistribution(image_tensor, scale, center=None, sigma=.01, n_components=1000):
-    image_tensor = clip(image_tensor).flip(0)
+
+def _clip(mask):
+    i, j = torch.where(mask)
+    return mask[i.min():i.max(), j.min():j.max()]
+
+
+
+class GaussianMixture(d.MixtureSameFamily):
+    def __init__(self, locs, scales=None, probs=None):
+        if scales is None:
+            scales = torch.ones_like(locs)
+        if probs is None:
+            probs = torch.ones(locs.size(0)).type_as(locs)
+        mixture_distribution = d.Categorical(probs)
+        component_distribution = d.Independent(d.Normal(locs, scales), 1)
+        super().__init__(mixture_distribution, component_distribution)
+
+
+def image_uniform(image_tensor, scale, center=None, sigma=.01, n_components=1000):
+    image_tensor = _clip(image_tensor).flip(0)
     density = image_tensor / image_tensor.sum()
     nonzero = torch.stack(torch.where(density), dim=-1)
     scale = torch.tensor(scale)
@@ -71,7 +74,7 @@ def ImageDistribution(image_tensor, scale, center=None, sigma=.01, n_components=
     return GaussianMixture(locs, scales, probs)
 
 
-class MoonsDistribution:
+class MoonDistribution:
     def __init__(self, upper=False, scale=1., center=None, sigma=.01):
         self.upper = upper
         self.scale = torch.tensor(scale)

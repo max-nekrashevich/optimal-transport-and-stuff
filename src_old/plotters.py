@@ -3,32 +3,24 @@ import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import torch
 
-from .utils import initializer, sample_from_components, get_component_centers
-
-
-def get_mesh(xrange, yrange=None):
-    yrange = yrange or xrange
-    return torch.meshgrid(torch.linspace(*xrange),
-                          torch.linspace(*yrange), indexing="xy")
-
-
-@torch.no_grad()
-def get_critic_heatmap(critic, mesh):
-    device = next(critic.parameters()).device
-    return critic(torch.dstack(mesh).to(device)).cpu().squeeze(-1)
+from .utils import (get_mesh,
+                    get_critic_heatmap,
+                    initializer,
+                    sample_from_components,
+                    get_component_centers)
 
 
 def get_projection(dim):
     return "3d" if dim == 3 else "rectilinear"
 
 
-def plot_heatmap(hmap, xlim, ylim=None, **imshow_kwargs):
-    yticks, xticks = hmap.shape
+def plot_heatmap(heatmap, xlim, ylim=None, **imshow_kwargs):
+    yticks, xticks = heatmap.shape
     ylim = ylim or xlim
     dx = .5 * (xlim[1] - xlim[0]) / (xticks - 1)
     dy = .5 * (ylim[1] - ylim[0]) / (yticks - 1)
     extent = (xlim[0] - dx, xlim[1] + dx, ylim[0] - dy, ylim[1] + dy)
-    plt.imshow(hmap[::-1, :], extent=extent, **imshow_kwargs)
+    plt.imshow(heatmap[::-1, :], extent=extent, **imshow_kwargs)
 
 
 @torch.no_grad()
@@ -99,8 +91,8 @@ def plot_transport(x, y, h_x, *,
                    h_x_color="purple",
                    dots_alpha=.5,
                    n_arrows=128,
-                   cmap=cm.PRGn,
-                   hmap_alpha=.5):
+                   colormap=cm.PRGn,
+                   heatmap_alpha=.5):
     figure = plt.figure(figsize=figsize)
     source_dim = x.shape[1:]
     target_dim = y.shape[1:]
@@ -120,9 +112,9 @@ def plot_transport(x, y, h_x, *,
     if target_dim == (2,) and critic:
         lims = (plt.gca().get_xlim(), plt.gca().get_ylim())
         mesh = get_mesh(*lims)
-        hmap = get_critic_heatmap(critic, mesh).numpy()
-        plot_heatmap(hmap, *lims, alpha=hmap_alpha,
-                    cmap=cmap)
+        heatmap = get_critic_heatmap(critic, mesh).numpy()
+        plot_heatmap(heatmap, *lims, alpha=heatmap_alpha,
+                    colormap=colormap)
         plt.colorbar(label="Critic score")
 
     plt.legend(loc="best")
@@ -139,8 +131,8 @@ def plot_transport_components(x, y, h_x, labels, *,
                    aggregate_arrows=True,
                    legend=True,
                    n_arrows=128,
-                   cmap=cm.PRGn,
-                   hmap_alpha=.5):
+                   colormap=cm.PRGn,
+                   heatmap_alpha=.5):
     colors = cycle(colors or [f"C{i}" for i in range(10)])
     figure = plt.figure(figsize=figsize)
     source_dim = x.shape[1:]
@@ -173,8 +165,8 @@ def plot_transport_components(x, y, h_x, labels, *,
         lims = (plt.gca().get_xlim(), plt.gca().get_ylim())
         mesh = get_mesh(*lims)
         heatmap = get_critic_heatmap(critic, mesh).numpy()
-        plot_heatmap(heatmap, *lims, alpha=hmap_alpha,
-                     cmap=cmap)
+        plot_heatmap(heatmap, *lims, alpha=heatmap_alpha,
+                     colormap=colormap)
         plt.colorbar(label="Critic score")
 
     if legend: plt.legend(loc="best")
@@ -212,8 +204,8 @@ class SyntheticPlotter(Plotter):
                  transport_h_x_color="purple",
                  transport_dots_alpha=.5,
                  transport_n_arrows=128,
-                 transport_cmap=cm.PRGn,
-                 transport_hmap_alpha=.5,
+                 transport_colormap=cm.PRGn,
+                 transport_heatmap_alpha=.5,
                  final_figsize=(9, 7),
                  final_n_samples=512,
                  final_n_arrows=512):
@@ -240,8 +232,8 @@ class SyntheticPlotter(Plotter):
                               h_x_color=self.transport_h_x_color,
                               dots_alpha=self.transport_dots_alpha,
                               n_arrows=self.transport_n_arrows,
-                              cmap=self.transport_cmap,
-                              hmap_alpha=self.transport_hmap_alpha)
+                              colormap=self.transport_colormap,
+                              heatmap_alpha=self.transport_heatmap_alpha)
 
     @torch.no_grad()
     def plot_end(self, source, target, *, mover, device=None, **kwargs):
@@ -256,8 +248,8 @@ class SyntheticPlotter(Plotter):
                               h_x_color=self.transport_h_x_color,
                               dots_alpha=self.transport_dots_alpha,
                               n_arrows=self.final_n_arrows,
-                              cmap=self.transport_cmap,
-                              hmap_alpha=self.transport_hmap_alpha)
+                              colormap=self.transport_colormap,
+                              heatmap_alpha=self.transport_heatmap_alpha)
 
 
 class ComponentPlotter(SyntheticPlotter):
@@ -275,8 +267,8 @@ class ComponentPlotter(SyntheticPlotter):
                  transport_h_x_color="purple",
                  transport_dots_alpha=.5,
                  transport_n_arrows=128,
-                 transport_cmap=cm.PRGn,
-                 transport_hmap_alpha=.5,
+                 transport_colormap=cm.PRGn,
+                 transport_heatmap_alpha=.5,
                  final_figsize=(9, 7),
                  final_colors=None,
                  final_legend=True,
