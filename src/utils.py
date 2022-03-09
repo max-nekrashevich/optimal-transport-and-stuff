@@ -1,13 +1,11 @@
 import functools
 import inspect
-import itertools
 
 import numpy as np
-
 import torch
-from torch.distributions import MixtureSameFamily
+import torchvision.datasets as datasets
 
-from .distributions import TensorDatasetDistribution
+from tqdm.auto import tqdm
 
 
 def uniform_circle(n_samples: int) -> torch.Tensor:
@@ -29,9 +27,13 @@ def fibonacci_sphere(n_samples: int) -> torch.Tensor:
     return torch.stack([x, y, z]).T
 
 
-def get_explicit_P(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-    P = torch.einsum("ij,ik->jk", y, x)
-    return P / torch.norm(P)
+def load_mnist(root, transform=None, train=True, verbose=True):
+    dataset = datasets.MNIST(root, transform=transform, download=True, train=train)
+    images, targets = [], []
+    for image, target in tqdm(dataset, disable=not verbose):
+        images.append(image)
+        targets.append(target)
+    return torch.stack(images), torch.tensor(targets)
 
 
 def initializer(func):
@@ -65,53 +67,3 @@ def initializer(func):
     return wrapper
 
 
-def get_permutation(total_ndim: int, batch_ndim: int, sample_ndim: int) -> list:
-    p = list(range(total_ndim))
-    p[:batch_ndim], p[batch_ndim:batch_ndim+sample_ndim] = \
-    p[sample_ndim:batch_ndim+sample_ndim], p[:sample_ndim]
-    return p
-
-def repeat_labels(labels, shape):
-    ndim = len(shape)
-    permutation = get_permutation(ndim + 1, 1, ndim)
-    return labels.repeat(*shape, 1).permute(permutation).flatten(end_dim=1)
-
-def sample_from_tensordataset_classes(distribution: TensorDatasetDistribution, sample_shape):
-    samples = []
-    for label in distribution.classes:
-        samples.append(distribution.sample(sample_shape, component=label))
-    labels = repeat_labels(distribution.classes, sample_shape)
-
-    return torch.cat(samples), labels
-
-
-def sample_from_gmm_components(gmm: MixtureSameFamily,
-                               sample_shape):
-    components = gmm._component_distribution
-    samples = components.sample(sample_shape)
-
-    permutation = get_permutation(samples.ndim,
-                                  len(components.batch_shape),
-                                  len(sample_shape))
-
-    labels = repeat_labels(torch.arange(0, samples.size(1)), sample_shape)
-    return samples.permute(permutation).flatten(end_dim=1), labels
-
-
-def sample_from_components(distribution, sample_shape):
-    if isinstance(distribution, TensorDatasetDistribution):
-        return sample_from_tensordataset_classes(distribution, sample_shape)
-    if isinstance(distribution, MixtureSameFamily):
-        return sample_from_gmm_components(distribution, sample_shape)
-    return distribution.sample(sample_shape), torch.full(sample_shape, 0)
-
-
-def product_dict(dct):
-    for values in itertools.product(*dct.values()):
-        yield dict(zip(dct.keys(), values))
-
-def get_component_centers(data: torch.Tensor, labels: torch.Tensor):
-    centers = []
-    for label in labels.unique():
-        centers.append(data[labels == label].mean(0))
-    return torch.stack(centers)
