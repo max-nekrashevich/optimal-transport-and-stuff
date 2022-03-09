@@ -11,7 +11,7 @@ from .utils import (get_mesh,
 
 
 def get_projection(dim):
-    return "3d" if dim == 3 else "rectilinear"
+    return "3d" if dim == (3,) else "rectilinear"
 
 
 def plot_heatmap(heatmap, xlim, ylim=None, **imshow_kwargs):
@@ -114,7 +114,7 @@ def plot_transport(x, y, h_x, *,
         mesh = get_mesh(*lims)
         heatmap = get_critic_heatmap(critic, mesh).numpy()
         plot_heatmap(heatmap, *lims, alpha=heatmap_alpha,
-                    colormap=colormap)
+                    cmap=colormap)
         plt.colorbar(label="Critic score")
 
     plt.legend(loc="best")
