@@ -41,7 +41,8 @@ def plot_heatmap(heatmap, xlim, ylim=None, **imshow_kwargs):
 
 @torch.no_grad()
 def plot_samples(samples: torch.Tensor, **scatter_kwargs):
-    plt.scatter(*samples.cpu().numpy().T, **scatter_kwargs)
+    plt.gca().scatter(*samples.cpu().numpy().T, **scatter_kwargs)
+
 
 @torch.no_grad()
 def plot_arrows(from_, to_, **quiver_kwargs):
@@ -76,7 +77,7 @@ def plot_density(distribution, kind, lims, n_samples):
 def plot_transport(x, y, h_x, labels, *, critic=None,
                    figsize=(9, 7),
                    source_colors=None,
-                   target_color="gray",
+                   target_color="navy",
                    dots_alpha=.5,
                    aggregate_arrows=True,
                    n_arrows=128,
