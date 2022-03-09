@@ -45,7 +45,7 @@ def plot_samples(samples: torch.Tensor, **scatter_kwargs):
 
 
 @torch.no_grad()
-def plot_arrows(from_, to_, **quiver_kwargs):
+def plot_quiver(from_, to_, **quiver_kwargs):
     origins = from_.cpu().numpy().T
     lengths = (to_ - from_).cpu().numpy().T
     if len(origins) == 2:
@@ -75,16 +75,20 @@ def plot_density(distribution, kind, lims, n_samples):
 
 
 def plot_transport(x, y, h_x, labels, *, critic=None,
+                   plot_source=True,
+                   plot_target=True,
+                   plot_critic=True,
+                   plot_arrows=True,
+                   legend=True,
+                   show=True,
                    figsize=(9, 7),
-                   source_colors=None,
-                   target_color="navy",
-                   dots_alpha=.5,
                    aggregate_arrows=True,
                    n_arrows=128,
+                   source_colors=None,
+                   target_color="darkseagreen",
+                   dots_alpha=.5,
                    colormap=None,
-                   heatmap_alpha=.5,
-                   plot_critic=True,
-                   show=True):
+                   heatmap_alpha=.5):
     source_colors = source_colors or [f"C{i}" for i in range(10)]
     colormap = colormap or cm.PRGn
     figure = plt.figure(figsize=figsize)
@@ -93,19 +97,20 @@ def plot_transport(x, y, h_x, labels, *, critic=None,
     components = labels.unique()
     plt.subplot(projection=_get_projection(target_dim))
 
-    if source_dim == target_dim:
+    if plot_source and source_dim == target_dim:
         for component, color in zip(components, cycle(source_colors)):
             plot_samples(x[labels == component], color=color,
-                            alpha=dots_alpha, label=f"Source samples ({component})")
+                         alpha=dots_alpha, label=f"Source component {component}")
 
-    plot_samples(y, color=target_color,
-                    alpha=dots_alpha, label="Target samples")
+    if plot_target:
+        plot_samples(y, color=target_color,
+                     alpha=dots_alpha, label="Target")
 
     for component, color in zip(components, cycle(source_colors)):
         plot_samples(h_x[labels == component], color=color, marker="v",
-                        alpha=dots_alpha, label=f"Moved samples ({component})")
+                     alpha=dots_alpha, label=f"Moved component {component}")
 
-    if source_dim == target_dim:
+    if plot_arrows and source_dim == target_dim:
         if aggregate_arrows:
             arrows_from = _get_component_centers(x, labels)
             arrows_to = _get_component_centers(h_x, labels)
@@ -113,7 +118,7 @@ def plot_transport(x, y, h_x, labels, *, critic=None,
             ix = torch.randint(0, x.size(0), (n_arrows,))
             arrows_from = x[ix]
             arrows_to = h_x[ix]
-        plot_arrows(arrows_from, arrows_to)
+        plot_quiver(arrows_from, arrows_to)
 
     if plot_critic and target_dim == (2,):
         lims = (plt.gca().get_xlim(), plt.gca().get_ylim())
@@ -123,7 +128,7 @@ def plot_transport(x, y, h_x, labels, *, critic=None,
                     cmap=colormap)
         plt.colorbar(label="Critic score")
 
-    plt.legend(loc="upper left")
+    if legend: plt.legend(loc="upper left")
     plt.tight_layout()
     if show: plt.show(block=False)
     return figure
