@@ -83,6 +83,7 @@ def plot_transport(x, y, h_x, labels, *, critic=None,
                    n_arrows=128,
                    colormap=None,
                    heatmap_alpha=.5,
+                   plot_critic=True,
                    show=True):
     source_colors = source_colors or [f"C{i}" for i in range(10)]
     colormap = colormap or cm.PRGn
@@ -114,7 +115,7 @@ def plot_transport(x, y, h_x, labels, *, critic=None,
             arrows_to = h_x[ix]
         plot_arrows(arrows_from, arrows_to)
 
-    if target_dim == (2,) and critic:
+    if plot_critic and target_dim == (2,):
         lims = (plt.gca().get_xlim(), plt.gca().get_ylim())
         mesh = _get_mesh(*lims)
         heatmap = _get_critic_heatmap(critic, mesh).numpy()
