@@ -119,7 +119,7 @@ class DiscreteMixture(CompositeDistribution):
 
         indices = torch.multinomial(self.probs, sample_shape.numel(), replacement=True)
         samples = torch.empty(sample_shape.numel(), *self.event_shape, device=self.device)
-        for index, count in Counter(indices).items():
+        for index, count in Counter(indices.tolist()).items():
             samples[indices == index] = self.components[index].sample((count,))
         samples = samples.view(sample_shape + self.event_shape)
         labels = self.component_labels[indices].view(sample_shape)

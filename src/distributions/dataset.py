@@ -1,7 +1,7 @@
 import torch
 
-
 from .base import CompositeDistribution, _to_tensor
+
 
 # TODO: Implement torchvision datasets
 
@@ -37,7 +37,7 @@ class TensorDatasetDistribution(CompositeDistribution):
 
         indices = []
         for label in from_components:
-            component = torch.where(self.component_labels == label)[0]
+            component = torch.where(self.labels == label)[0]
             indices.append(component[torch.randint(0, component.size(0), sample_shape)])
         indices = torch.stack(indices)
 
