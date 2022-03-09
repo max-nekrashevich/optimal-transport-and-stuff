@@ -12,7 +12,6 @@ __all__ = ["Distribution",
            "CompositeDistribution",
            "Uniform",
            "Normal",
-           "CurveDistribution",
            "DiscreteMixture",
            "GaussianMixture"]
 
@@ -29,7 +28,7 @@ class Distribution:
         self.device = device
 
     def to(self, device):
-        raise NotImplementedError
+        self.device = device
 
     def sample(self, sample_shape=torch.Size(), **kwargs):
         raise NotImplementedError
@@ -42,6 +41,7 @@ class CompositeDistribution(Distribution):
         super().__init__(event_shape, device)
 
     def to(self, device):
+        super().to(device)
         self.component_labels.to(device)
 
     def sample(self, sample_shape=torch.Size(), *, return_labels=False):
@@ -58,6 +58,7 @@ class Uniform(Distribution):
         super().__init__(low.size(), device)
 
     def to(self, device):
+        super().to(device)
         self.low.to(device)
         self.high.to(device)
 
@@ -76,6 +77,7 @@ class Normal(Distribution):
         super().__init__(loc.size(), device)
 
     def to(self, device):
+        super().to(device)
         self.loc.to(device)
         self.scale.to(device)
 
@@ -85,17 +87,6 @@ class Normal(Distribution):
         random = torch.randn(sample_shape + self.event_shape,
                              dtype=self.loc.dtype, device=self.device)
         return self.loc + random * self.scale
-
-
-class CurveDistribution(Distribution):
-    def __init__(self, curve, *, device=None):
-        self.curve = curve
-        self.t_distribution = Uniform(0., 1., device=device)
-        super().__init__(curve(torch.tensor(0.)).size(), device)
-
-    def sample(self, sample_shape=torch.Size(), **kwargs):
-        t_samples = self.t_distribution.sample(sample_shape)
-        return self.curve(t_samples)
 
 
 class DiscreteMixture(CompositeDistribution):
