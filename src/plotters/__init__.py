@@ -8,6 +8,7 @@ from . import plotly as ply
 
 
 # TODO: Image plotter
+# TODO: Rework end to generate subplots for component
 
 
 __all__ = ["Plotter"]
@@ -43,9 +44,9 @@ class Plotter:
         with self._widget:
             try:
                 clear_output(wait=True)
-                figure = self._backend.plot_transport(x, y, h_x, labels,
-                                                      critic=critic,
-                                                      **self.plot_params)
+                figure = self._backend.get_step_figure(x, y, h_x, labels,
+                                                       critic=critic,
+                                                       **self.plot_params)
                 interrupted = False
             except KeyboardInterrupt:
                 self._widget.close()
@@ -57,8 +58,11 @@ class Plotter:
 
     @torch.no_grad()
     def plot_end(self, source, target, mover, *, critic=None):
-        x = source.sample_components((self.n_samples,), from_components=None).flatten(end_dim=1)
+        x = source.sample_components((self.n_samples,),
+                                     from_components=None).flatten(end_dim=1)
         labels = source.component_labels.repeat_interleave(self.n_samples)
         y = target.sample((self.n_samples,))
         h_x = mover(x)
-        return self._backend.plot_transport(x, y, h_x, labels, critic=critic, **self.plot_params)
+        return self._backend.get_step_figure(x, y, h_x, labels,
+                                             critic=critic,
+                                             **self.plot_params)

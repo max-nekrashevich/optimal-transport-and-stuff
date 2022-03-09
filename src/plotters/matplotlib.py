@@ -30,29 +30,32 @@ def _get_component_centers(data: torch.Tensor, labels: torch.Tensor):
     return torch.stack(centers)
 
 
-def plot_heatmap(heatmap, xlim, ylim=None, **imshow_kwargs):
+def plot_heatmap(heatmap, xlim, ylim=None, *, ax=None, **imshow_kwargs):
+    if ax is None: ax = plt.gca()
     yticks, xticks = heatmap.shape
     ylim = ylim or xlim
     dx = .5 * (xlim[1] - xlim[0]) / (xticks - 1)
     dy = .5 * (ylim[1] - ylim[0]) / (yticks - 1)
     extent = (xlim[0] - dx, xlim[1] + dx, ylim[0] - dy, ylim[1] + dy)
-    plt.imshow(heatmap[::-1, :], extent=extent, **imshow_kwargs)
+    ax.imshow(heatmap[::-1, :], extent=extent, **imshow_kwargs)
 
 
 @torch.no_grad()
-def plot_samples(samples: torch.Tensor, **scatter_kwargs):
-    plt.gca().scatter(*samples.cpu().numpy().T, **scatter_kwargs)
+def plot_samples(samples: torch.Tensor, ax=None, **scatter_kwargs):
+    if ax is None: ax = plt.gca()
+    ax.scatter(*samples.cpu().numpy().T, **scatter_kwargs)
 
 
 @torch.no_grad()
-def plot_quiver(from_, to_, **quiver_kwargs):
+def plot_quiver(from_, to_, *, ax=None, **quiver_kwargs):
+    if ax is None: ax = plt.gca()
     origins = from_.cpu().numpy().T
     lengths = (to_ - from_).cpu().numpy().T
     if len(origins) == 2:
-        plt.quiver(*origins, *lengths, angles='xy', scale_units='xy',
-                   scale=1., width=.0025, **quiver_kwargs)
+        ax.quiver(*origins, *lengths, angles='xy', scale_units='xy',
+                  scale=1., width=.0025, **quiver_kwargs)
     else:
-        plt.quiver(*origins, *lengths, color="black", **quiver_kwargs)
+        ax.quiver(*origins, *lengths, color="black", **quiver_kwargs)
 
 
 def close_figure(figure):
@@ -63,25 +66,23 @@ def show_figure():
     plt.show(block=False)
 
 
-def plot_density(distribution, kind, lims, n_samples):
+def plot_density(distribution, kind, lims, n_samples, *, ax=None):
     if kind == "pdf":
         mesh = _get_mesh(*lims)
         heatmap = distribution.log_prob(torch.dstack(mesh)).exp_().numpy()
-        plot_heatmap(heatmap, *lims)
+        plot_heatmap(heatmap, *lims, ax=ax)
         plt.colorbar(label="Density")
     elif kind == "samples":
         samples = distribution.sample((n_samples,))
-        plot_samples(samples)
+        plot_samples(samples, ax=ax)
 
 
-def plot_transport(x, y, h_x, labels, *, critic=None,
+def plot_transport(x, y, h_x, labels, *, critic=None, ax=None,
                    plot_source=True,
                    plot_target=True,
                    plot_critic=True,
                    plot_arrows=True,
                    legend=True,
-                   show=True,
-                   figsize=(9, 7),
                    aggregate_arrows=True,
                    n_arrows=128,
                    source_colors=None,
@@ -91,15 +92,14 @@ def plot_transport(x, y, h_x, labels, *, critic=None,
                    heatmap_alpha=.5):
     source_colors = source_colors or [f"C{i}" for i in range(10)]
     colormap = colormap or cm.PRGn
-    figure = plt.figure(figsize=figsize)
     source_dim = x.shape[1:]
     target_dim = y.shape[1:]
     components = labels.unique()
-    plt.subplot(projection=_get_projection(target_dim))
+    if ax is None: ax = plt.gca()
 
     if plot_source and source_dim == target_dim:
         for component, color in zip(components, cycle(source_colors)):
-            plot_samples(x[labels == component], color=color,
+            plot_samples(x[labels == component], ax=ax, color=color,
                          alpha=dots_alpha, label=f"Source component {component}")
 
     if plot_target:
@@ -107,7 +107,7 @@ def plot_transport(x, y, h_x, labels, *, critic=None,
                      alpha=dots_alpha, label="Target")
 
     for component, color in zip(components, cycle(source_colors)):
-        plot_samples(h_x[labels == component], color=color, marker="v",
+        plot_samples(h_x[labels == component], ax=ax, color=color, marker="v",
                      alpha=dots_alpha, label=f"Moved component {component}")
 
     if plot_arrows and source_dim == target_dim:
@@ -128,7 +128,14 @@ def plot_transport(x, y, h_x, labels, *, critic=None,
                     cmap=colormap)
         plt.colorbar(label="Critic score")
 
-    if legend: plt.legend(loc="upper left")
+    if legend: ax.legend(loc="best")
+
+
+def get_step_figure(x, y, h_x, labels, *, critic=None,
+                    figsize=(9, 7), show=True, **plot_transport_params):
+    figure = plt.figure(figsize=figsize)
+    ax = plt.subplot(projection=_get_projection(y.shape[1:]))
+    plot_transport(x, y, h_x, labels, critic=critic, ax=ax, **plot_transport_params)
     plt.tight_layout()
     if show: plt.show(block=False)
     return figure
