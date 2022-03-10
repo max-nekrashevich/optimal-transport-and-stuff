@@ -11,7 +11,7 @@ from . import plotly as ply
 # TODO: Rework end to generate subplots for component
 
 
-__all__ = ["Plotter"]
+__all__ = ["Plotter", "ImagePlotter"]
 
 
 _backends = {"matplotlib": mpl,
@@ -37,6 +37,11 @@ class Plotter:
     def close_widget(self):
         self._widget.close()
 
+    def _get_step_figure(self, x, y, h_x, labels, *, critic=None):
+        return self._backend.get_transport_figure(x, y, h_x, labels,
+                                                       critic=critic,
+                                                       **self.plot_params)
+
     def plot_step(self, x, y, h_x, labels, *, critic=None):
         self._step_num += 1
         if self._step_num % self.plot_interval != 0:
@@ -44,9 +49,7 @@ class Plotter:
         with self._widget:
             try:
                 clear_output(wait=True)
-                figure = self._backend.get_step_figure(x, y, h_x, labels,
-                                                       critic=critic,
-                                                       **self.plot_params)
+                figure = self._get_step_figure(x, y, h_x, labels, critic=critic, **self.plot_params)
                 interrupted = False
             except KeyboardInterrupt:
                 self._widget.close()
@@ -63,6 +66,13 @@ class Plotter:
         labels = source.component_labels.repeat_interleave(self.n_samples)
         y = target.sample((self.n_samples,))
         h_x = mover(x)
-        return self._backend.get_step_figure(x, y, h_x, labels,
-                                             critic=critic,
-                                             **self.plot_params)
+        return self._backend._get_step_figure(x, y, h_x, labels,
+                                              critic=critic,
+                                              **self.plot_params)
+
+
+class ImagePlotter(Plotter):
+    def _get_transport_figure(self, x, y, h_x, labels, *, critic=None):
+        return self._backend.get_images_figure(x, y, h_x, labels,
+                                                       critic=critic,
+                                                       **self.plot_params)

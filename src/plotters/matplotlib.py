@@ -6,6 +6,8 @@ import torch
 
 import matplotlib.pyplot as plt
 
+from torchvision.transforms.functional import to_pil_image
+
 
 def _get_mesh(xrange, yrange=None):
     yrange = yrange or xrange
@@ -30,6 +32,13 @@ def _get_component_centers(data: torch.Tensor, labels: torch.Tensor):
     return torch.stack(centers)
 
 
+def _get_grid_dims(n_plots):
+    for n_rows in range(int(np.sqrt(n_plots)), 1, -1):
+        if n_plots % n_rows == 0:
+            return n_rows, n_plots // n_rows
+    return 1, n_plots
+
+
 def plot_heatmap(heatmap, xlim, ylim=None, *, ax=None, **imshow_kwargs):
     if ax is None: ax = plt.gca()
     yticks, xticks = heatmap.shape
@@ -44,6 +53,12 @@ def plot_heatmap(heatmap, xlim, ylim=None, *, ax=None, **imshow_kwargs):
 def plot_samples(samples: torch.Tensor, ax=None, **scatter_kwargs):
     if ax is None: ax = plt.gca()
     ax.scatter(*samples.cpu().numpy().T, **scatter_kwargs)
+
+
+@torch.no_grad()
+def show_image(image: torch.Tensor, ax=None, **imshow_kwargs):
+    if ax is None: ax = plt.gca()
+    ax.imshow(to_pil_image(image.cpu()), **imshow_kwargs)
 
 
 @torch.no_grad()
@@ -131,7 +146,7 @@ def plot_transport(x, y, h_x, labels, *, critic=None, ax=None,
     if legend: ax.legend(loc="best")
 
 
-def get_step_figure(x, y, h_x, labels, *, critic=None,
+def get_transport_figure(x, y, h_x, labels, *, critic=None,
                     figsize=(9, 7), show=True, **plot_transport_params):
     figure = plt.figure(figsize=figsize)
     ax = plt.subplot(projection=_get_projection(y.shape[1:]))
@@ -140,6 +155,20 @@ def get_step_figure(x, y, h_x, labels, *, critic=None,
     if show: plt.show(block=False)
     return figure
 
+
+def get_images_figure(x, y, h_x, labels, *, critic, n_images,
+                      show=True, img_scale=16, **imshow_kwargs):
+    n_rows, n_cols = _get_grid_dims(n_images)
+    img_h, img_w = h_x.shape[-2:]
+    figsize = (n_cols * img_w / img_scale, n_rows * img_h / img_scale)
+    figure, axes = plt.subplots(n_rows, n_cols, figsize=figsize, squeeze=True)
+    for image, ax, label in zip(h_x, axes.ravel(), labels):
+        show_image(image, ax, **imshow_kwargs)
+        ax.set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
+        ax.set_title(f"Component {label}")
+    plt.tight_layout()
+    if show: plt.show(block=False)
+    return figure
 
 # def plot_start(source, target, *,
 #                source_kind="samples", target_kind="samples",
