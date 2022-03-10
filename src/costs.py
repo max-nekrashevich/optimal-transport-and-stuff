@@ -55,7 +55,7 @@ class InnerGW_opt:
         #         P_mse = F.mse_loss(self.P.weight, target_P)
         #         self.logger.log("P MSE", P_mse.item(), 1 + self.step // 15)
         #     self.step += 1
-        return self.l * torch.norm(Px - y, p="fro", dim=1) ** 2
+        return self.l * torch.norm(Px - y.flatten(1), p="fro", dim=1) ** 2
 
 
 class InnerGW_const:
@@ -65,4 +65,4 @@ class InnerGW_const:
 
     def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         Px = x.flatten(1) @ self.P
-        return self.l * torch.norm(Px - y, p="fro", dim=1) ** 2
+        return self.l * torch.norm(Px - y.flatten(1), p="fro", dim=1) ** 2
