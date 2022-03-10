@@ -7,7 +7,7 @@ import torch.optim as o
 
 
 def _get_explicit_P(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-    P = torch.einsum("ij,ik->jk", y, x)
+    P = torch.einsum("ij,ik->jk", y.flatten(1), x.flatten(1))
     return P / torch.norm(P)
 
 
@@ -17,7 +17,7 @@ class InnerGW_explicit:
 
     def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         P = _get_explicit_P(x, y)
-        return self.l * torch.norm(x @ P.T - y, 2, dim=1) ** 2
+        return self.l * torch.norm(x.flatten(1) @ P.T - y.flatten(1), p="fro", dim=1) ** 2
 
 
 class InnerGW_opt:
@@ -45,7 +45,7 @@ class InnerGW_opt:
         for _ in range(self.n_iter):
             self.P_opt.zero_grad()
             Px = self.P(x)
-            cost = self.l * (torch.norm(Px - y.detach(), p="fro", dim=1) ** 2)
+            cost = self.l * (torch.norm(Px - y.detach().flatten(1), p="fro", dim=1) ** 2)
             cost.mean().backward()
             self.P_opt.step()
         Px = self.P(x)
