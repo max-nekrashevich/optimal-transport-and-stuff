@@ -1,3 +1,4 @@
+import copy
 import functools
 import inspect
 
@@ -67,3 +68,5 @@ def initializer(func):
     return wrapper
 
 
+def copy_models(*models):
+    return [copy.deepcopy(model) for model in models]
