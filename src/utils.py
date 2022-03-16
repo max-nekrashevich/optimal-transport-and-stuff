@@ -2,9 +2,11 @@ import copy
 import functools
 import inspect
 
+import h5py
 import numpy as np
 import torch
 import torchvision.datasets as datasets
+import torchvision.transforms as t
 
 from tqdm.auto import tqdm
 
@@ -28,13 +30,22 @@ def fibonacci_sphere(n_samples: int) -> torch.Tensor:
     return torch.stack([x, y, z]).T
 
 
-def load_mnist(root, transform=None, train=True, verbose=True):
+def load_mnist(root, transform=t.ToTensor(), train=True, verbose=True):
     dataset = datasets.MNIST(root, transform=transform, download=True, train=train)
     images, targets = [], []
     for image, target in tqdm(dataset, disable=not verbose):
         images.append(image)
         targets.append(target)
     return torch.stack(images), torch.tensor(targets)
+
+
+def load_h5py(path, key=None, transform=t.ToTensor(), verbose=True):
+    file = h5py.File(path, "r")
+    if key is None: key = next(iter(file.keys()))
+    images = []
+    for image in tqdm(file.get(key), disable=not verbose):
+        images.append(transform(image))
+    return torch.stack(images)
 
 
 def initializer(func):
