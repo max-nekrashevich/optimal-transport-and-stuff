@@ -7,9 +7,9 @@ import torch.nn.functional as F
 __all__ = ["unet_h"]
 
 
-def unet_h(data_dim: tuple, n_blocks=4):
+def unet_h(data_dim: tuple, n_blocks=4, base_channels=32, bilinear=True):
     n_channels = data_dim[0]
-    return UNet(n_channels, n_channels, n_blocks)
+    return UNet(n_channels, n_channels, n_blocks, base_channels, bilinear)
 
 
 class DoubleConv(nn.Module):
@@ -52,7 +52,7 @@ class Up(nn.Module):
     def __init__(self, in_channels, out_channels, bilinear=True):
         super().__init__()
 
-        # if bilinear, use the normal convolutions to reduce the number of channels
+        # if bilinear, use the normal convolutions to reduce the number of base_channels
         if bilinear:
             self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
             self.conv = DoubleConv(in_channels, out_channels, in_channels // 2)
@@ -83,26 +83,26 @@ class OutConv(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self, n_channels, n_classes, n_blocks=4, bilinear=True):
+    def __init__(self, in_channels, out_channels, n_blocks=4, base_channels=32, bilinear=True):
         super(UNet, self).__init__()
-        self.n_channels = n_channels
-        self.n_classes = n_classes
+        self.n_channels = in_channels
+        self.n_classes = out_channels
         self.bilinear = bilinear
 
-        self.inc = DoubleConv(n_channels, 64)
-        channels = 64
+        self.inc = DoubleConv(in_channels, base_channels)
         self.down_blocks = nn.ModuleList()
         for _ in range(n_blocks - 1):
-            self.down_blocks.append(Down(channels, 2 * channels))
-            channels *= 2
-        factor = 2 if bilinear else 1
-        self.down_blocks.append(Down(channels, 2 * channels // factor))
+            self.down_blocks.append(Down(base_channels, 2 * base_channels))
+            base_channels *= 2
+        factor = 1 if bilinear else 2
+        self.down_blocks.append(Down(base_channels, factor * base_channels))
 
         self.up_blocks = nn.ModuleList()
         for _ in range(n_blocks - 1):
-            self.up_blocks.append(Up(2 * channels, channels // factor, bilinear))
-        self.up_blocks.append(Up(128, 64, bilinear))
-        self.outc = OutConv(64, n_classes)
+            base_channels //= 2
+            self.up_blocks.append(Up(4 * base_channels, base_channels * factor, bilinear))
+        self.up_blocks.append(Up(2 * base_channels, base_channels))
+        self.outc = OutConv(base_channels, out_channels)
 
 
     def forward(self, x):

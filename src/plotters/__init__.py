@@ -72,7 +72,7 @@ class Plotter:
 
 
 class ImagePlotter(Plotter):
-    def _get_transport_figure(self, x, y, h_x, labels, *, critic=None):
+    def _get_step_figure(self, x, y, h_x, labels, *, critic=None):
         return self._backend.get_images_figure(x, y, h_x, labels,
                                                        critic=critic,
                                                        **self.plot_params)

@@ -147,7 +147,9 @@ def plot_transport(x, y, h_x, labels, *, critic=None, ax=None,
 
 
 def get_transport_figure(x, y, h_x, labels, *, critic=None,
-                    figsize=(9, 7), show=True, **plot_transport_params):
+                         figsize=(9, 7),
+                         show=True,
+                         **plot_transport_params):
     figure = plt.figure(figsize=figsize)
     ax = plt.subplot(projection=_get_projection(y.shape[1:]))
     plot_transport(x, y, h_x, labels, critic=critic, ax=ax, **plot_transport_params)
@@ -157,18 +159,33 @@ def get_transport_figure(x, y, h_x, labels, *, critic=None,
 
 
 def get_images_figure(x, y, h_x, labels, *, critic, n_images,
-                      show=True, img_scale=16, **imshow_kwargs):
+                      plot_source=True,
+                      img_scale=16,
+                      show=True,
+                      **imshow_kwargs):
     n_rows, n_cols = _get_grid_dims(n_images)
+    if plot_source: n_rows *= 2
     img_h, img_w = h_x.shape[-2:]
     figsize = (n_cols * img_w / img_scale, n_rows * img_h / img_scale)
     figure, axes = plt.subplots(n_rows, n_cols, figsize=figsize, squeeze=True)
-    for image, ax, label in zip(h_x, axes.ravel(), labels):
-        show_image(image, ax, **imshow_kwargs)
-        ax.set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
-        ax.set_title(f"Component {label}")
+    if plot_source:
+        for image, ax, label in zip(x, axes[::2].ravel(), labels):
+            show_image(image, ax, **imshow_kwargs)
+            ax.set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
+            ax.set_title(f"Component {label}")
+        for image, ax, label in zip(h_x, axes[1::2].ravel(), labels):
+            show_image(image, ax, **imshow_kwargs)
+            ax.set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
+            # ax.set_title(f"Moved component {label}")
+    else:
+        for image, ax, label in zip(h_x, axes.ravel(), labels):
+            show_image(image, ax, **imshow_kwargs)
+            ax.set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
+            ax.set_title(f"Component {label}")
     plt.tight_layout()
     if show: plt.show(block=False)
     return figure
+
 
 # def plot_start(source, target, *,
 #                source_kind="samples", target_kind="samples",
