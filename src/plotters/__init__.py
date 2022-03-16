@@ -49,7 +49,7 @@ class Plotter:
         with self._widget:
             try:
                 clear_output(wait=True)
-                figure = self._get_step_figure(x, y, h_x, labels, critic=critic, **self.plot_params)
+                figure = self._get_step_figure(x, y, h_x, labels, critic=critic)
                 interrupted = False
             except KeyboardInterrupt:
                 self._widget.close()
