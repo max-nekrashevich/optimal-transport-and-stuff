@@ -58,6 +58,49 @@ class InnerGW_opt:
         return self.l * torch.norm(Px - y.flatten(1), p="fro", dim=1) ** 2
 
 
+class InnerGW_conv:
+    def __init__(self, l=.05,
+                 n_iter=10,
+                 optimizer=o.Adam,
+                 optimizer_params=dict(lr=5e-5),
+                #  logger=None,
+                 device=None):
+        self.P = nn.Sequential(
+            nn.Conv2d(3, 3, kernel_size=7, padding=6, dilation=2, bias=False),
+            nn.Conv2d(3, 3, kernel_size=7, padding=6, dilation=2, bias=False),
+            nn.Conv2d(3, 3, kernel_size=7, padding=6, dilation=2, bias=False),
+            nn.Conv2d(3, 3, kernel_size=7, padding=6, dilation=2, bias=False),
+        ).to(device)
+        geotorch.sphere(self.P[0], "weight")
+        geotorch.sphere(self.P[1], "weight")
+        geotorch.sphere(self.P[2], "weight")
+        geotorch.sphere(self.P[3], "weight")
+        self.P_opt = optimizer(self.P.parameters(), **optimizer_params)
+
+        self.l = l
+        self.n_iter = n_iter
+
+        # self.logger = logger
+        self.step = 0
+        self.device = device
+
+    def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        for _ in range(self.n_iter):
+            self.P_opt.zero_grad()
+            Px = self.P(x).flatten(1)
+            cost = self.l * (torch.norm(Px - y.detach().flatten(1), p="fro", dim=1) ** 2)
+            cost.mean().backward()
+            self.P_opt.step()
+        Px = self.P(x).flatten(1)
+        # if self.logger:
+        #     with torch.no_grad():
+        #         target_P = _get_explicit_P(x, y).to(self.device)
+        #         P_mse = F.mse_loss(self.P.weight, target_P)
+        #         self.logger.log("P MSE", P_mse.item(), 1 + self.step // 15)
+        #     self.step += 1
+        return self.l * torch.norm(Px - y.flatten(1), p="fro", dim=1) ** 2
+
+
 class InnerGW_const:
     def __init__(self, P, l=.05):
         self.P = P
