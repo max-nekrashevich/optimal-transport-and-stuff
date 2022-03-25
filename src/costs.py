@@ -6,6 +6,16 @@ import torch.nn.functional as F
 import torch.optim as o
 
 
+class CustomLinear(nn.Linear):
+    def __init__(self, in_features: int, out_features: int, bias: bool = True, device=None, dtype=None, weight_init=None) -> None:
+        super().__init__(in_features, out_features, bias, device, dtype)
+        self._weight_size = self.weight.size()
+        self.weight.data = self.weight.data.flatten() if weight_init is None else weight_init.flatten()
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return F.linear(input, self.weight.view(self._weight_size), self.bias)
+
+
 def _get_explicit_P(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     P = torch.einsum("ij,ik->jk", y.flatten(1), x.flatten(1))
     return P / torch.norm(P)
@@ -26,10 +36,11 @@ class InnerGW_opt:
                  optimizer=o.Adam,
                  optimizer_params=dict(lr=5e-5),
                 #  logger=None,
+                 init=None,
                  device=None):
         self.P = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(p, q, bias=False)
+            CustomLinear(p, q, bias=False, weight_init=init)
         ).to(device)
         geotorch.sphere(self.P[1], "weight")
         self.P_opt = optimizer(self.P.parameters(), **optimizer_params)
@@ -68,6 +79,7 @@ class InnerGW_conv:
         self.P = nn.Sequential(
             nn.Conv2d(3, 3, kernel_size=7, padding=6, dilation=2, bias=False),
             nn.Conv2d(3, 3, kernel_size=7, padding=6, dilation=2, bias=False),
+            nn.BatchNorm2d(3),
             nn.Conv2d(3, 3, kernel_size=7, padding=6, dilation=2, bias=False),
             nn.Conv2d(3, 3, kernel_size=7, padding=6, dilation=2, bias=False),
         ).to(device)
