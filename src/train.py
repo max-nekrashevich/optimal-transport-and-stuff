@@ -13,16 +13,11 @@ def train(source, target, mover, critic, cost_func, *,
           n_iter, n_samples, n_iter_mover=10, n_iter_critic=1,
           optimizer=o.Adam,
           optimizer_params=dict(lr=5e-5),
-          scheduler=None,
-          scheduler_params=dict(),
           logger=None,
           plotter=None,
           progress_bar=True):
     mover_optimizer = optimizer(mover.parameters(), **optimizer_params)
     critic_optimizer = optimizer(critic.parameters(), **optimizer_params)
-    if scheduler is not None:
-        mover_scheduler = scheduler(mover_optimizer, **scheduler_params)
-        critic_scheduler = scheduler(critic_optimizer, **scheduler_params)
 
     if plotter: plotter.init_widget()
 
@@ -39,14 +34,12 @@ def train(source, target, mover, critic, cost_func, *,
             mover_loss = cost - critic(h_x).mean()
             mover_loss.backward()
             mover_optimizer.step()
-            if scheduler is not None: mover_scheduler.step()
 
         for _ in range(n_iter_critic):
             critic_optimizer.zero_grad()
             critic_loss = critic(h_x.detach()).mean() - critic(y).mean()
             critic_loss.backward()
             critic_optimizer.step()
-            if scheduler is not None: critic_scheduler.step()
 
         if plotter:
             figure = plotter.plot_step(x, y, h_x, labels, critic=critic)

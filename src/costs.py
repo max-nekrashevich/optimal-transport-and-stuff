@@ -121,3 +121,13 @@ class InnerGW_const:
     def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         Px = x.flatten(1) @ self.P
         return self.l * torch.norm(Px - y.flatten(1), p="fro", dim=1) ** 2
+
+
+class InnerGW_exp:
+    def __init__(self, P, l=.05):
+        self.P = P
+        self.l = l
+
+    def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        Px = x.flatten(1) @ self.P
+        return -torch.exp(-self.l * torch.norm(Px - y.flatten(1), p="fro", dim=1) ** 2)
