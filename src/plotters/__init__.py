@@ -66,9 +66,7 @@ class Plotter:
         labels = source.component_labels.repeat_interleave(self.n_samples)
         y = target.sample((self.n_samples,))
         h_x = mover(x)
-        return self._get_step_figure(x, y, h_x, labels,
-                                     critic=critic,
-                                     **self.plot_params)
+        return self._get_step_figure(x, y, h_x, labels, critic=critic)
 
 
 class ImagePlotter(Plotter):
