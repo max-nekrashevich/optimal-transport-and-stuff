@@ -33,7 +33,7 @@ class DownBlock(nn.Module):
                       factor * channels,
                       kernel_size,
                       stride=2,
-                      padding=1,
+                      padding=kernel_size//2,
                       bias=False),
             nn.ReLU(),
             nn.BatchNorm2d(factor * channels)
@@ -51,8 +51,8 @@ class UpBlock(nn.Module):
                                channels // factor,
                                kernel_size,
                                stride=2,
-                               padding=1,
-                               output_padding=1,
+                               padding=kernel_size//2,
+                               output_padding=kernel_size//2,
                                bias=False),
             nn.ReLU(),
             nn.BatchNorm2d(channels // factor)
@@ -106,7 +106,7 @@ class InnerGW_conv:
             channels *= 2
 
         for _ in range(1, depth):
-            layers.append(DownBlock(channels))
+            layers.append(UpBlock(channels))
             channels //= 2
 
         self.P = nn.Sequential(
