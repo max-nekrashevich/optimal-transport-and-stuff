@@ -73,15 +73,6 @@ class Up(nn.Module):
         return self.conv(x)
 
 
-class OutConv(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(OutConv, self).__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-
-    def forward(self, x):
-        return self.conv(x)
-
-
 class UNet(nn.Module):
     def __init__(self, in_channels, out_channels, n_blocks=4, base_channels=32, bilinear=True):
         super(UNet, self).__init__()
@@ -102,7 +93,7 @@ class UNet(nn.Module):
             base_channels //= 2
             self.up_blocks.append(Up(4 * base_channels, base_channels * factor, bilinear))
         self.up_blocks.append(Up(2 * base_channels, base_channels))
-        self.outc = OutConv(base_channels, out_channels)
+        self.outc = nn.Conv2d(base_channels, out_channels, kernel_size=1)
 
 
     def forward(self, x):

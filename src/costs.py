@@ -25,6 +25,43 @@ class CustomLinear(nn.Linear):
         return F.linear(input, self.weight.view(self._weight_size), self.bias)
 
 
+class DownBlock(nn.Module):
+    def __init__(self, channels, factor=2, kernel_size=3) -> None:
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(channels,
+                      factor * channels,
+                      kernel_size,
+                      stride=2,
+                      padding=1,
+                      bias=False),
+            nn.ReLU(),
+            nn.BatchNorm2d(factor * channels)
+        )
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return self.block(input)
+
+
+class UpBlock(nn.Module):
+    def __init__(self, channels, factor=2, kernel_size=3) -> None:
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.ConvTranspose2d(channels,
+                               channels // factor,
+                               kernel_size,
+                               stride=2,
+                               padding=1,
+                               output_padding=1,
+                               bias=False),
+            nn.ReLU(),
+            nn.BatchNorm2d(channels // factor)
+        )
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return self.block(input)
+
+
 def _get_P(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     P = torch.einsum("ij,ik->jk", y.flatten(1), x.flatten(1))
     return P / torch.norm(P)
@@ -58,26 +95,37 @@ class InnerGW_opt:
 
 class InnerGW_conv:
     def __init__(self,
+                 depth=4, channels=16,
                  n_iter=10,
                  optimizer=o.Adam,
                  optimizer_params=dict(lr=5e-5),
                  device=None) -> None:
+        layers = []
+        for _ in range(1, depth):
+            layers.append(DownBlock(channels))
+            channels *= 2
+
+        for _ in range(1, depth):
+            layers.append(DownBlock(channels))
+            channels //= 2
+
         self.P = nn.Sequential(
-            nn.Conv2d(3, 3, kernel_size=7, padding=6, dilation=2, bias=False),
-            nn.Conv2d(3, 3, kernel_size=7, padding=6, dilation=2, bias=False),
-            nn.BatchNorm2d(3),
-            nn.Conv2d(3, 3, kernel_size=7, padding=6, dilation=2, bias=False),
-            nn.Conv2d(3, 3, kernel_size=7, padding=6, dilation=2, bias=False),
+            nn.Conv2d(3, channels, 3,
+                      stride=2,
+                      padding=1,
+                      bias=False),
+            nn.ReLU(),
+            nn.BatchNorm2d(channels),
+            *layers,
+            nn.ConvTranspose2d(channels, 3, 3,
+                               stride=2,
+                               padding=1,
+                               output_padding=1),
+            nn.Sigmoid()
         ).to(device)
-        geotorch.sphere(self.P[0], "weight")
-        geotorch.sphere(self.P[1], "weight")
-        geotorch.sphere(self.P[2], "weight")
-        geotorch.sphere(self.P[3], "weight")
 
         self.P_opt = optimizer(self.P.parameters(), **optimizer_params)
-
         self.n_iter = n_iter
-
         self.device = device
 
     def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
@@ -101,16 +149,6 @@ class InnerGW_const:
         _x, _y = x.flatten(1), y.flatten(1)
         Px = _x @ self.P.T
         return torch.norm(Px - _y, dim=1) ** 2
-
-
-class InnerGW_exp:
-    def __init__(self, P) -> None:
-        self.P = P
-
-    def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        _x, _y = x.flatten(1), y.flatten(1)
-        Px = _x @ self.P.T
-        return -torch.exp(-torch.norm(Px - _y, dim=1) ** 2)
 
 
 class SqGW_const:
