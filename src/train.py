@@ -11,6 +11,7 @@ def _log(logger, tag, data, **kwargs):
 
 def train(source, target, mover, critic, cost_func, *,
           n_iter, n_samples, n_iter_mover=10, n_iter_critic=1,
+          l=.05,
           optimizer=o.Adam,
           optimizer_params=dict(lr=5e-5),
           logger=None,
@@ -30,7 +31,7 @@ def train(source, target, mover, critic, cost_func, *,
         for _ in range(n_iter_mover):
             h_x = mover(x)
             mover_optimizer.zero_grad()
-            cost = cost_func(x, h_x).mean()
+            cost = l * cost_func(x, h_x).mean()
             mover_loss = cost - critic(h_x).mean()
             mover_loss.backward()
             mover_optimizer.step()
