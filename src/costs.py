@@ -86,11 +86,11 @@ class InnerGW_opt:
         for _ in range(self.n_iter):
             self.P_opt.zero_grad()
             Px = self.P(_x)
-            cost = torch.norm(Px - _y.detach(), dim=1) ** 2
+            cost = F.mse_loss(Px, _y.detach())
             cost.mean().backward()
             self.P_opt.step()
         Px = self.P(_x)
-        return torch.norm(Px - _y, dim=1) ** 2
+        return F.mse_loss(Px, _y)
 
 
 class InnerGW_conv:
@@ -133,32 +133,39 @@ class InnerGW_conv:
         for _ in range(self.n_iter):
             self.P_opt.zero_grad()
             Px = self.P(x).flatten(1)
-            cost = torch.norm(Px - _y.detach(), dim=1) ** 2
+            cost = F.mse_loss(Px, _y.detach())
             cost.mean().backward()
             self.P_opt.step()
         Px = self.P(x).flatten(1)
 
-        return torch.norm(Px - _y, dim=1) ** 2
+        return F.mse_loss(Px, _y)
 
 
-class InnerGW_const:
+class InnerGW:
+    def __init__(self, p, q,
+                 gamma=.1,
+                 init=None,
+                 device=None) -> None:
+        self.P = torch.eye(q, p, device=device) if init is None else init
+        self.gamma = gamma
+
+    def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        _x, _y = x.flatten(1), y.flatten(1)
+        if self.gamma != 0.:
+            self.P *= (1 - self.gamma)
+            self.P += self.gamma * (_y.detach().T @ _x.detach()) / _x.size(0)
+        Px = _x @ self.P.T
+        return F.mse_loss(Px, _y)
+
+
+class SqGW:
     def __init__(self, P) -> None:
         self.P = P
 
     def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         _x, _y = x.flatten(1), y.flatten(1)
         Px = _x @ self.P.T
-        return torch.norm(Px - _y, dim=1) ** 2
-
-
-class SqGW_const:
-    def __init__(self, P=None) -> None:
-        self.P = P
-
-    def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        _x, _y = x.flatten(1), y.flatten(1)
-        Px = _x @ self.P.T
-        return torch.norm(Px - _y, dim=1) ** 2 - 2 * (_x.norm(dim=1) * _y.norm(dim=1)) ** 2
+        return F.mse_loss(Px, _y) - 2 * (_x.norm(dim=1) * _y.norm(dim=1)) ** 2
 
 
 class SqGW_opt:
@@ -179,8 +186,8 @@ class SqGW_opt:
         for _ in range(self.n_iter):
             self.P_opt.zero_grad()
             Px = self.P(_x)
-            cost = torch.norm(Px - _y.detach(), dim=1) ** 2
+            cost = F.mse_loss(Px, _y.detach())
             (cost.mean() + self.P.weight.norm() ** 2 / 4).backward()
             self.P_opt.step()
         Px = self.P(_x)
-        return torch.norm(Px - _y, dim=1) ** 2 - 2 * (_x.norm(dim=1) * _y.norm(dim=1)) ** 2
+        return F.mse_loss(Px, _y) - 2 * (_x.norm(dim=1) * _y.norm(dim=1)) ** 2
