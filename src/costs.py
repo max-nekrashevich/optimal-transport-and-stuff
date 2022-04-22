@@ -25,10 +25,9 @@ class CustomLinear(nn.Linear):
         return F.linear(input, self.weight.view(self._weight_size), self.bias)
 
 
-class DownBlock(nn.Module):
+class DownBlock(nn.Sequential):
     def __init__(self, channels, factor=2, kernel_size=3) -> None:
-        super().__init__()
-        self.block = nn.Sequential(
+        super().__init__(
             nn.Conv2d(channels,
                       factor * channels,
                       kernel_size,
@@ -39,14 +38,10 @@ class DownBlock(nn.Module):
             nn.BatchNorm2d(factor * channels)
         )
 
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return self.block(input)
 
-
-class UpBlock(nn.Module):
+class UpBlock(nn.Sequential):
     def __init__(self, channels, factor=2, kernel_size=3) -> None:
-        super().__init__()
-        self.block = nn.Sequential(
+        super().__init__(
             nn.ConvTranspose2d(channels,
                                channels // factor,
                                kernel_size,
@@ -58,37 +53,36 @@ class UpBlock(nn.Module):
             nn.BatchNorm2d(channels // factor)
         )
 
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return self.block(input)
-
 
 def _get_P(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     P = torch.einsum("ij,ik->jk", y.flatten(1), x.flatten(1))
     return P / torch.norm(P)
 
 
-class InnerGW_opt:
-    def __init__(self, p, q,
-                 n_iter=10,
-                 optimizer=o.Adam,
-                 optimizer_params=dict(lr=5e-5),
-                 init=None,
-                 device=None) -> None:
+class InnerGW(nn.Module):
+    def __init__(self, p, q, gamma=.1, init=None, device=None) -> None:
+        super().__init__()
+        self.P = torch.eye(q, p, device=device) if init is None else init
+        self.gamma = gamma
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        _x, _y = x.flatten(1), y.flatten(1)
+        if self.gamma != 0.:
+            self.P *= (1 - self.gamma)
+            P_update = (_y.detach().T @ _x.detach())
+            self.P += self.gamma * P_update / torch.norm(P_update)
+        Px = _x @ self.P.T
+        return F.mse_loss(Px, _y)
+
+
+class InnerGW_opt(nn.Module):
+    def __init__(self, p, q, init=None, device=None) -> None:
+        super().__init__()
         self.P = CustomLinear(p, q, bias=False, weight_init=init).to(device)
         geotorch.sphere(self.P, "weight")
 
-        self.P_opt = optimizer(self.P.parameters(), **optimizer_params)
-        self.n_iter = n_iter
-        self.device = device
-
     def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         _x, _y = x.flatten(1), y.flatten(1)
-        for _ in range(self.n_iter):
-            self.P_opt.zero_grad()
-            Px = self.P(_x)
-            cost = F.mse_loss(Px, _y.detach())
-            cost.mean().backward()
-            self.P_opt.step()
         Px = self.P(_x)
         return F.mse_loss(Px, _y)
 
@@ -141,53 +135,25 @@ class InnerGW_conv:
         return F.mse_loss(Px, _y)
 
 
-class InnerGW:
-    def __init__(self, p, q,
-                 gamma=.1,
-                 init=None,
-                 device=None) -> None:
-        self.P = torch.eye(q, p, device=device) if init is None else init
-        self.gamma = gamma
-
-    def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        _x, _y = x.flatten(1), y.flatten(1)
-        if self.gamma != 0.:
-            self.P *= (1 - self.gamma)
-            self.P += self.gamma * (_y.detach().T @ _x.detach()) / _x.size(0)
-        Px = _x @ self.P.T
-        return F.mse_loss(Px, _y)
-
-
-class SqGW:
+class SqGW(nn.Module):
     def __init__(self, P) -> None:
+        super().__init__()
         self.P = P
 
-    def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         _x, _y = x.flatten(1), y.flatten(1)
         Px = _x @ self.P.T
         return F.mse_loss(Px, _y) - 2 * (_x.norm(dim=1) * _y.norm(dim=1)) ** 2
 
 
-class SqGW_opt:
+class SqGW_opt(nn.Module):
     def __init__(self, p, q,
-                 n_iter=10,
-                 optimizer=o.Adam,
-                 optimizer_params=dict(lr=5e-5),
                  init=None,
                  device=None) -> None:
+        super().__init__()
         self.P = CustomLinear(p, q, bias=False, weight_init=init).to(device)
 
-        self.P_opt = optimizer(self.P.parameters(), **optimizer_params)
-        self.n_iter = n_iter
-        self.device = device
-
-    def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         _x, _y = x.flatten(1), y.flatten(1)
-        for _ in range(self.n_iter):
-            self.P_opt.zero_grad()
-            Px = self.P(_x)
-            cost = F.mse_loss(Px, _y.detach())
-            (cost.mean() + self.P.weight.norm() ** 2 / 4).backward()
-            self.P_opt.step()
         Px = self.P(_x)
         return F.mse_loss(Px, _y) - 2 * (_x.norm(dim=1) * _y.norm(dim=1)) ** 2
