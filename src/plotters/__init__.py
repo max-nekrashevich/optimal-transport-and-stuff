@@ -47,13 +47,13 @@ class Plotter:
         if self._step_num % self.plot_interval != 0:
             return None
         with self._widget:
+            interrupted = True
             try:
                 clear_output(wait=True)
                 figure = self._get_step_figure(x, y, h_x, labels, critic=critic)
                 interrupted = False
             except KeyboardInterrupt:
                 self._widget.close()
-                interrupted = True
 
         if interrupted:
             raise KeyboardInterrupt

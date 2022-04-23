@@ -73,7 +73,8 @@ def train(source, target, mover, critic, cost, *,
           progress_bar=True):
     mover_optimizer = optimizer(mover.parameters(), **optimizer_params)
     critic_optimizer = optimizer(critic.parameters(), **optimizer_params)
-    cost_optimizer = optimizer(cost.parameters(), **optimizer_params)
+    if n_iter_cost:
+        cost_optimizer = optimizer(cost.parameters(), **optimizer_params)
 
     if plotter: plotter.init_widget()
 

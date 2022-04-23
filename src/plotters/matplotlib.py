@@ -141,7 +141,7 @@ def plot_transport(x, y, h_x, labels, *, critic=None, ax=None,
         heatmap = _get_critic_heatmap(critic, mesh).numpy()
         plot_heatmap(heatmap, *lims, alpha=heatmap_alpha,
                     cmap=colormap)
-        plt.colorbar(label="Critic score")
+        # plt.colorbar(label="Critic score")
 
     if legend: ax.legend(loc="best")
 
