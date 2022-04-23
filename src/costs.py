@@ -66,13 +66,13 @@ class InnerGW(nn.Module):
         self.gamma = gamma
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        _x, _y = x.flatten(1), y.flatten(1)
+        x, y = x.flatten(1), y.flatten(1)
         if self.gamma != 0.:
             self.P *= (1 - self.gamma)
-            P_update = (_y.detach().T @ _x.detach())
+            P_update = (y.detach().T @ x.detach())
             self.P += self.gamma * P_update / torch.norm(P_update)
-        Px = _x @ self.P.T
-        return F.mse_loss(Px, _y)
+        Px = x @ self.P.T
+        return F.mse_loss(Px, y)
 
 
 class InnerGW_opt(nn.Module):
@@ -82,9 +82,9 @@ class InnerGW_opt(nn.Module):
         geotorch.sphere(self.P, "weight")
 
     def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        _x, _y = x.flatten(1), y.flatten(1)
-        Px = self.P(_x)
-        return F.mse_loss(Px, _y)
+        x, y = x.flatten(1), y.flatten(1)
+        Px = self.P(x)
+        return F.mse_loss(Px, y)
 
 
 class InnerGW_conv:
@@ -94,7 +94,7 @@ class InnerGW_conv:
                  optimizer=o.Adam,
                  optimizer_params=dict(lr=5e-5),
                  device=None) -> None:
-        layers = []
+        layers: list[nn.Module] = []
         for _ in range(1, depth):
             layers.append(DownBlock(channels))
             channels *= 2
@@ -123,16 +123,16 @@ class InnerGW_conv:
         self.device = device
 
     def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        _y = y.flatten(1)
+        y = y.flatten(1)
         for _ in range(self.n_iter):
             self.P_opt.zero_grad()
             Px = self.P(x).flatten(1)
-            cost = F.mse_loss(Px, _y.detach())
+            cost = F.mse_loss(Px, y.detach())
             cost.mean().backward()
             self.P_opt.step()
         Px = self.P(x).flatten(1)
 
-        return F.mse_loss(Px, _y)
+        return F.mse_loss(Px, y)
 
 
 class SqGW(nn.Module):
@@ -141,9 +141,9 @@ class SqGW(nn.Module):
         self.P = P
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        _x, _y = x.flatten(1), y.flatten(1)
-        Px = _x @ self.P.T
-        return F.mse_loss(Px, _y) - 2 * (_x.norm(dim=1) * _y.norm(dim=1)) ** 2
+        x, y = x.flatten(1), y.flatten(1)
+        Px = x @ self.P.T
+        return F.mse_loss(Px, y) - 2 * (x.norm(dim=1) * y.norm(dim=1)) ** 2
 
 
 class SqGW_opt(nn.Module):
@@ -154,6 +154,39 @@ class SqGW_opt(nn.Module):
         self.P = CustomLinear(p, q, bias=False, weight_init=init).to(device)
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        _x, _y = x.flatten(1), y.flatten(1)
-        Px = self.P(_x)
-        return F.mse_loss(Px, _y) - 2 * (_x.norm(dim=1) * _y.norm(dim=1)) ** 2
+        x, y = x.flatten(1), y.flatten(1)
+        Px = self.P(x)
+        return F.mse_loss(Px, y) - 2 * (x.norm(dim=1) * y.norm(dim=1)) ** 2
+
+
+class innerGW_kernel(nn.Module):
+    def __init__(self, kernel, source, mover, n_samples_mc=5) -> None:
+        super().__init__()
+        self._mover = [mover]  # Needed to prevent registering as a submodule
+        self.kernel = kernel
+        self.source = source
+        self.n = n_samples_mc
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        x1 = self.source((self.n,))
+        y1 = self._mover[0](x1)
+
+        x2 = self.source((self.n,))
+        y2 = self._mover[0](x2)
+
+        k_y_y = self.kernel(y, y)
+        k_x_x1 = self.kernel(x, x1)
+        k_y_y1 = self.kernel(x, x1)
+        k_x2_x = self.kernel(x2, x)
+        k_y1_y2 = self.kernel(y1, y2, outer=True)
+
+        cost = k_y_y - 2 * torch.mean(k_x_x1 * k_y_y1, dim=-1) + \
+            torch.einsum("bi,ij,jb->b", k_x_x1, k_y1_y2, k_x2_x) / self.n ** 2
+
+        return cost
+
+
+def kernel_1(x: torch.Tensor, y: torch.Tensor, outer=False) -> torch.Tensor:
+    x, y = x.flatten(1), y.flatten(1)
+    if outer or x.size(0) != y.size(0): x, y = x.unsqueeze(1), y.unsqueeze(0)
+    return x.norm(dim=-1) + y.norm(dim=-1) - .5 * (x - y).norm(dim=-1)
