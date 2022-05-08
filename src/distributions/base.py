@@ -8,12 +8,13 @@ import torch
 # TODO: Validate args
 
 
-__all__ = ["Distribution",
+__all__ = ["BasicDistribution",
            "CompositeDistribution",
            "Uniform",
            "Normal",
            "DiscreteMixture",
-           "GaussianMixture"]
+           "GaussianMixture",
+           "to_composite"]
 
 
 def _to_tensor(data, device):
@@ -22,7 +23,7 @@ def _to_tensor(data, device):
     return torch.tensor(data, device=device)
 
 
-class Distribution:
+class BasicDistribution:
     def __init__(self, event_shape, device):
         self.event_shape = torch.Size(event_shape)
         self.device = device
@@ -34,7 +35,7 @@ class Distribution:
         raise NotImplementedError
 
 
-class CompositeDistribution(Distribution):
+class CompositeDistribution(BasicDistribution):
     def __init__(self, event_shape, component_labels, device):
         self.component_labels = _to_tensor(component_labels, device)
         self._component_ix = {c.item(): ix for ix, c in enumerate(self.component_labels)}
@@ -51,7 +52,7 @@ class CompositeDistribution(Distribution):
         raise NotImplementedError
 
 
-class Uniform(Distribution):
+class Uniform(BasicDistribution):
     def __init__(self, low, high, *, device=None):
         self.low = _to_tensor(low, device)
         self.high = _to_tensor(high, device)
@@ -63,14 +64,14 @@ class Uniform(Distribution):
         self.high.to(device)
 
     @torch.no_grad()
-    def sample(self, sample_shape=torch.Size(), **kwargs):
+    def sample(self, sample_shape=torch.Size()):
         sample_shape = torch.Size(sample_shape)
         random = torch.rand(sample_shape + self.event_shape,
                             dtype=self.low.dtype, device=self.device)
         return self.low + random * (self.high - self.low)
 
 
-class Normal(Distribution):
+class Normal(BasicDistribution):
     def __init__(self, loc, scale, *, device=None):
         self.loc = _to_tensor(loc, device)
         self.scale = _to_tensor(scale, device)
@@ -82,7 +83,7 @@ class Normal(Distribution):
         self.scale.to(device)
 
     @torch.no_grad()
-    def sample(self, sample_shape=torch.Size(), **kwargs):
+    def sample(self, sample_shape=torch.Size()):
         sample_shape = torch.Size(sample_shape)
         random = torch.randn(sample_shape + self.event_shape,
                              dtype=self.loc.dtype, device=self.device)
@@ -113,9 +114,9 @@ class DiscreteMixture(CompositeDistribution):
         for index, count in Counter(indices.tolist()).items():
             samples[indices == index] = self.components[index].sample((count,))
         samples = samples.view(sample_shape + self.event_shape)
-        labels = self.component_labels[indices].view(sample_shape)
 
         if return_labels:
+            labels = self.component_labels[indices].view(sample_shape)
             return samples, labels
         return samples
 
@@ -135,6 +136,10 @@ class DiscreteMixture(CompositeDistribution):
 class GaussianMixture(DiscreteMixture):
     def __init__(self, locs, scales, *, probs=None, device=None):
         components = [Normal(loc, scale, device=device) for loc, scale in zip(locs, scales)]
-        labels = torch.arange(0, locs.size(0), )
+        labels = torch.arange(0, locs.size(0))
         if probs is None: probs = torch.ones_like(labels) / locs.size(0)
         super().__init__(components, probs, labels, device=device)
+
+
+def to_composite(dist: BasicDistribution) -> CompositeDistribution:
+    return DiscreteMixture([dist], [1.], [0], device=dist.device)

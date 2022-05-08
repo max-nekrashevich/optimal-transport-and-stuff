@@ -28,7 +28,7 @@ class TensorDatasetDistribution(CompositeDistribution):
             return self.features[indices], self.labels[indices]
         return self.features[indices]
 
-    def sample_components(self, sample_shape=torch.Size(), from_components=()):
+    def sample_components(self, sample_shape=torch.Size(), from_components=None):
         sample_shape = torch.Size(sample_shape)
         if from_components is None:
             from_components = self.component_labels.tolist()

@@ -1,6 +1,6 @@
 import torch
 
-from .base import Distribution, Uniform, _to_tensor
+from .base import BasicDistribution, Uniform, _to_tensor
 
 
 # TODO: Implement splines
@@ -12,7 +12,7 @@ __all__ = ["Curve",
            "CurveDistribution"]
 
 
-class CurveDistribution(Distribution):
+class CurveDistribution(BasicDistribution):
     def __init__(self, curve, *, device=None):
         self.curve = curve
         self.t_distribution = Uniform(0., 1., device=device)
