@@ -1,6 +1,7 @@
 import copy
 import functools
 import inspect
+import itertools
 
 import h5py
 import numpy as np
@@ -81,3 +82,10 @@ def initializer(func):
 
 def copy_models(*models):
     return [copy.deepcopy(model) for model in models]
+
+
+def nwise(iterable, n=2):
+    iters = itertools.tee(iterable, n)
+    for i, it in enumerate(iters):
+        next(itertools.islice(it, i, i), None)
+    return zip(*iters)

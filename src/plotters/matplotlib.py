@@ -9,10 +9,10 @@ import matplotlib.pyplot as plt
 from torchvision.transforms.functional import to_pil_image
 
 
-def _get_mesh(xrange, yrange=None):
+def _get_mesh(xrange, yrange=None, n_steps=100):
     yrange = yrange or xrange
-    return torch.meshgrid(torch.linspace(*xrange),
-                          torch.linspace(*yrange), indexing="xy")
+    return torch.meshgrid(torch.linspace(*xrange, n_steps),
+                          torch.linspace(*yrange, n_steps), indexing="xy")
 
 
 @torch.no_grad()
@@ -58,7 +58,7 @@ def plot_samples(samples: torch.Tensor, ax=None, **scatter_kwargs):
 @torch.no_grad()
 def show_image(image: torch.Tensor, ax=None, **imshow_kwargs):
     if ax is None: ax = plt.gca()
-    ax.imshow(to_pil_image(image.cpu()), **imshow_kwargs)
+    ax.imshow(to_pil_image(image.cpu().clamp(0, 1)), **imshow_kwargs)
 
 
 @torch.no_grad()
