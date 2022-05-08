@@ -95,7 +95,6 @@ class UNet(nn.Module):
         self.up_blocks.append(Up(2 * base_channels, base_channels))
         self.outc = nn.Conv2d(base_channels, out_channels, kernel_size=1)
 
-
     def forward(self, x):
         comp_stack = [self.inc(x)]
         for block in self.down_blocks:

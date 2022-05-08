@@ -1,8 +1,23 @@
 import numpy as np
 import torch.nn as nn
 
+from ..utils import nwise
 
-__all__ = ["mnistnet_g", "mnistnet_d", "mnistnet_h"]
+
+__all__ = ["mlp", "mnistnet_g", "mnistnet_d", "mnistnet_h"]
+
+
+def mlp(input_size: int, output_size: int = 1, *,
+        hidden_size: int = 32, num_layers: int = 4):
+    layer_sizes = [hidden_size] * (num_layers - 1) + [output_size]
+    modules: list[nn.Module] = [nn.Linear(input_size, layer_sizes[0])]
+
+    for in_size, out_size in nwise(layer_sizes):
+        modules.append(nn.LeakyReLU())
+        modules.append(nn.Dropout(.1))
+        modules.append(nn.Linear(in_size, out_size))
+
+    return nn.Sequential(*modules)
 
 
 def mnistnet_d(data_dim: tuple = (1, 28, 28)):
