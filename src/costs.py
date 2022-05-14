@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import torch.optim as o
+import typing as tp
 
 
 class CustomLinear(nn.Linear):
@@ -60,18 +60,26 @@ def _get_P(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 
 
 class InnerGW(nn.Module):
-    def __init__(self, p, q, gamma=.1, init=None, device=None) -> None:
+    def __init__(self, p, q, gamma=None, init=None, device=None) -> None:
         super().__init__()
-        self.P = torch.eye(q, p, device=device) if init is None else init
+        if init is not None:
+            self.P = init
+        elif p != q:
+            self.P = torch.eye(q, p, device=device)
+        else:
+            self.P = None
         self.gamma = gamma
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         x, y = x.flatten(1), y.flatten(1)
-        if self.gamma != 0.:
+        if self.gamma is not None:
             self.P *= (1 - self.gamma)
             P_update = (y.detach().T @ x.detach())
             self.P += self.gamma * P_update / torch.norm(P_update)
-        Px = x @ self.P.T
+        if self.P is not None:
+            Px = x @ self.P.T
+        else:
+            Px = x
         return F.mse_loss(Px, y)
 
 
@@ -87,14 +95,12 @@ class InnerGW_opt(nn.Module):
         return F.mse_loss(Px, y)
 
 
-class InnerGW_conv:
+class InnerGW_bottleneck(nn.Module):
     def __init__(self,
                  depth=4, channels=16,
-                 n_iter=10,
-                 optimizer=o.Adam,
-                 optimizer_params=dict(lr=5e-5),
                  device=None) -> None:
-        layers: list[nn.Module] = []
+        super().__init__()
+        layers: tp.List[nn.Module] = []
         for _ in range(1, depth):
             layers.append(DownBlock(channels))
             channels *= 2
@@ -118,20 +124,24 @@ class InnerGW_conv:
             nn.Sigmoid()
         ).to(device)
 
-        self.P_opt = optimizer(self.P.parameters(), **optimizer_params)
-        self.n_iter = n_iter
-        self.device = device
+    def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        Px = self.P(x)
+        return F.mse_loss(Px, y)
+
+
+class InnerGW_conv(nn.Module):
+    def __init__(self, depth=4, channels=16, device=None) -> None:
+        super().__init__()
+        self.P = nn.Sequential(
+            nn.utils.spectral_norm(nn.Conv2d(3, channels, 3, padding=1, bias=False)),
+            nn.utils.spectral_norm(nn.Conv2d(channels, channels, 3, padding=1, bias=False)),
+            nn.utils.spectral_norm(nn.Conv2d(channels, channels, 3, padding=1, bias=False)),
+            nn.utils.spectral_norm(nn.Conv2d(channels, 3, 3, padding=1, bias=False)),
+            nn.Sigmoid()
+        ).to(device)
 
     def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        y = y.flatten(1)
-        for _ in range(self.n_iter):
-            self.P_opt.zero_grad()
-            Px = self.P(x).flatten(1)
-            cost = F.mse_loss(Px, y.detach())
-            cost.mean().backward()
-            self.P_opt.step()
-        Px = self.P(x).flatten(1)
-
+        Px = self.P(x)
         return F.mse_loss(Px, y)
 
 
@@ -168,16 +178,16 @@ class innerGW_kernel(nn.Module):
         self.n = n_samples_mc
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        x1 = self.source((self.n,))
+        x1 = self.source.sample((self.n,))
         y1 = self._mover[0](x1)
 
-        x2 = self.source((self.n,))
+        x2 = self.source.sample((self.n,))
         y2 = self._mover[0](x2)
 
         k_y_y = self.kernel(y, y)
-        k_x_x1 = self.kernel(x, x1)
-        k_y_y1 = self.kernel(x, x1)
-        k_x2_x = self.kernel(x2, x)
+        k_x_x1 = self.kernel(x, x1, outer=True)
+        k_y_y1 = self.kernel(x, x1, outer=True)
+        k_x2_x = self.kernel(x2, x, outer=True)
         k_y1_y2 = self.kernel(y1, y2, outer=True)
 
         cost = k_y_y - 2 * torch.mean(k_x_x1 * k_y_y1, dim=-1) + \
@@ -188,5 +198,13 @@ class innerGW_kernel(nn.Module):
 
 def kernel_1(x: torch.Tensor, y: torch.Tensor, outer=False) -> torch.Tensor:
     x, y = x.flatten(1), y.flatten(1)
-    if outer or x.size(0) != y.size(0): x, y = x.unsqueeze(1), y.unsqueeze(0)
+    if outer or x.size(0) != y.size(0):
+        x, y = x.unsqueeze(1), y.unsqueeze(0)
     return x.norm(dim=-1) + y.norm(dim=-1) - .5 * (x - y).norm(dim=-1)
+
+
+def kernel_2(x: torch.Tensor, y: torch.Tensor, outer=False) -> torch.Tensor:
+    x, y = x.flatten(1), y.flatten(1)
+    if outer or x.size(0) != y.size(0):
+        x, y = x.unsqueeze(1), y.unsqueeze(0)
+    return torch.einsum("...i,...i->...", x, y)
