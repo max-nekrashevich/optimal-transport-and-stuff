@@ -19,13 +19,20 @@ def train(source: CompositeDistribution, target: BasicDistribution,
           l: float = .05,
           optimizer=o.Adam,
           optimizer_params=dict(lr=5e-5),
+          scheduler=None,
+          scheduler_params=dict(),
           logger=None,
           plotter=None,
           progress_bar=True):
     mover_optimizer = optimizer(mover.parameters(), **optimizer_params)
     critic_optimizer = optimizer(critic.parameters(), **optimizer_params)
+    if scheduler is not None:
+        mover_scheduler = scheduler(mover_optimizer, **scheduler_params)
+        critic_scheduler = scheduler(critic_optimizer, **scheduler_params)
     if n_iter_cost:
         cost_optimizer = optimizer(cost.parameters(), **optimizer_params)
+        if scheduler is not None:
+            cost_scheduler = scheduler(cost_optimizer, **scheduler_params)
 
     if plotter: plotter.init_widget()
 
@@ -42,6 +49,9 @@ def train(source: CompositeDistribution, target: BasicDistribution,
             cost_val.backward()
             cost_optimizer.step()
 
+        if n_iter_cost and scheduler is not None:
+            cost_scheduler.step()
+
         for _ in range(n_iter_mover):
             h_x = mover(x)
             mover_optimizer.zero_grad()
@@ -50,11 +60,17 @@ def train(source: CompositeDistribution, target: BasicDistribution,
             mover_loss.backward()
             mover_optimizer.step()
 
+        if scheduler is not None:
+            mover_scheduler.step()
+
         for _ in range(n_iter_critic):
             critic_optimizer.zero_grad()
             critic_loss = critic(h_x.detach()).mean() - critic(y).mean()
             critic_loss.backward()
             critic_optimizer.step()
+
+        if scheduler is not None:
+            critic_scheduler.step()
 
         if plotter:
             figure = plotter.plot_step(x, y, h_x, labels, critic=critic)
