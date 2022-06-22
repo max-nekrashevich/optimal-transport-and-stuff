@@ -4,6 +4,7 @@ import torch.optim as o
 
 from tqdm.auto import trange
 
+from .costs import Cost
 from .distributions import BasicDistribution, CompositeDistribution
 
 
@@ -13,7 +14,7 @@ def _log(logger, tag, data, **kwargs):
 
 
 def train(source: CompositeDistribution, target: BasicDistribution,
-          mover: nn.Module, critic: nn.Module, cost: nn.Module, *,
+          mover: nn.Module, critic: nn.Module, cost: Cost, *,
           n_iter: int, n_samples: int,
           n_iter_mover: int = 10, n_iter_critic: int = 1, n_iter_cost: int = 0,
           alpha: float = .05,
@@ -82,6 +83,12 @@ def train(source: CompositeDistribution, target: BasicDistribution,
             critic_y = critic(y).mean()
             loss = critic_y + cost_val - critic_h_x
 
+            x = source.sample((n_samples,))
+            x_prime = source.sample((n_samples,))
+            gw = cost.get_functional(x, x_prime, mover)
+
+
+        _log(logger, "GW", gw.item(), advance=False)
         _log(logger, "critic(y)", critic_y.item(), advance=False)
         _log(logger, "critic(h_x)", critic_h_x.item(), advance=False)
         _log(logger, "cost", cost_val.item(), advance=False)
@@ -96,15 +103,13 @@ def train(source: CompositeDistribution, target: BasicDistribution,
 
 
 def run_experiment(source: CompositeDistribution, target: BasicDistribution,
-                   mover: nn.Module, critic: nn.Module, cost: nn.Module, *,
+                   mover: nn.Module, critic: nn.Module, cost: Cost, *,
                    logger=None, **kwargs):
     if logger:
         logger.start()
         logger.log_hparams(kwargs)
     try:
-        train(source, target, mover, critic, cost,
-              logger=logger,
-              **kwargs)
+        train(source, target, mover, critic, cost, logger=logger, **kwargs)
     except KeyboardInterrupt:
         pass
     finally:

@@ -1,9 +1,23 @@
+import typing as tp
+
 import geotorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import typing as tp
+
+def kernel_1(x: torch.Tensor, y: torch.Tensor, outer=False) -> torch.Tensor:
+    x, y = x.flatten(1), y.flatten(1)
+    if outer or x.size(0) != y.size(0):
+        x, y = x.unsqueeze(1), y.unsqueeze(0)
+    return x.norm(dim=-1) + y.norm(dim=-1) - .5 * (x - y).norm(dim=-1)
+
+
+def kernel_2(x: torch.Tensor, y: torch.Tensor, outer=False) -> torch.Tensor:
+    x, y = x.flatten(1), y.flatten(1)
+    if outer or x.size(0) != y.size(0):
+        x, y = x.unsqueeze(1), y.unsqueeze(0)
+    return torch.einsum("...i,...i->...", x, y)
 
 
 class CustomLinear(nn.Linear):
@@ -59,9 +73,30 @@ def _get_P(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return P / torch.norm(P)
 
 
-class InnerGW(nn.Module):
-    def __init__(self, p, q, gamma=None, init=None, device=None) -> None:
+class Cost(nn.Module):
+    def get_functional(self,
+                       x: torch.Tensor,
+                       x_prime: torch.Tensor,
+                       mover: nn.Module) -> torch.Tensor:
+        raise NotImplementedError()
+
+
+class InnerGW_base(Cost):
+    def __init__(self, kernel) -> None:
         super().__init__()
+        self.kernel = kernel
+
+    @torch.no_grad()
+    def get_functional(self, x: torch.Tensor, x_prime: torch.Tensor, mover: nn.Module) -> torch.Tensor:
+        h_x = mover(x)
+        h_x_prime = mover(x_prime)
+        return torch.mean((self.kernel(x, x_prime, outer=True) -
+                           self.kernel(h_x, h_x_prime, outer=True)) ** 2)
+
+
+class InnerGW(InnerGW_base):
+    def __init__(self, p, q, gamma=None, init=None, device=None) -> None:
+        super().__init__(kernel_2)
         if init is not None:
             self.P = init
         elif p != q:
@@ -83,23 +118,21 @@ class InnerGW(nn.Module):
         return F.mse_loss(Px, y)
 
 
-class InnerGW_opt(nn.Module):
+class InnerGW_opt(InnerGW_base):
     def __init__(self, p, q, init=None, device=None) -> None:
-        super().__init__()
+        super().__init__(kernel_2)
         self.P = CustomLinear(p, q, bias=False, weight_init=init).to(device)
         geotorch.sphere(self.P, "weight")
 
-    def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         x, y = x.flatten(1), y.flatten(1)
         Px = self.P(x)
         return F.mse_loss(Px, y)
 
 
-class InnerGW_bottleneck(nn.Module):
-    def __init__(self,
-                 depth=4, channels=16,
-                 device=None) -> None:
-        super().__init__()
+class InnerGW_bottleneck(InnerGW_base):
+    def __init__(self, depth=4, channels=16, device=None) -> None:
+        super().__init__(kernel_2)
         layers: tp.List[nn.Module] = []
         for _ in range(1, depth):
             layers.append(DownBlock(channels))
@@ -124,53 +157,56 @@ class InnerGW_bottleneck(nn.Module):
             nn.Sigmoid()
         ).to(device)
 
-    def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         Px = self.P(x)
         return F.mse_loss(Px, y)
 
 
-class InnerGW_conv(nn.Module):
-    def __init__(self, depth=4, channels=16, device=None) -> None:
-        super().__init__()
+class InnerGW_conv(InnerGW_base):
+    def __init__(self, channels=16, depth=4, device=None) -> None:
+        super().__init__(kernel_2)
+        layers = [
+            nn.utils.spectral_norm(nn.Conv2d(channels, channels, 3, padding=1, bias=False))
+            for _ in range(2, depth)
+        ]
         self.P = nn.Sequential(
             nn.utils.spectral_norm(nn.Conv2d(3, channels, 3, padding=1, bias=False)),
-            nn.utils.spectral_norm(nn.Conv2d(channels, channels, 3, padding=1, bias=False)),
-            nn.utils.spectral_norm(nn.Conv2d(channels, channels, 3, padding=1, bias=False)),
+            *layers,
             nn.utils.spectral_norm(nn.Conv2d(channels, 3, 3, padding=1, bias=False)),
         ).to(device)
 
-    def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         Px = self.P(x)
         return F.mse_loss(Px, y)
 
 
-class SqGW(nn.Module):
-    def __init__(self, P) -> None:
-        super().__init__()
-        self.P = P
+# class SqGW(nn.Module):
+#     def __init__(self, P) -> None:
+#         super().__init__()
+#         self.P = P
 
-    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        x, y = x.flatten(1), y.flatten(1)
-        Px = x @ self.P.T
-        return F.mse_loss(Px, y) - 2 * (x.norm(dim=1) * y.norm(dim=1)) ** 2
-
-
-class SqGW_opt(nn.Module):
-    def __init__(self, p, q,
-                 init=None,
-                 device=None) -> None:
-        super().__init__()
-        self.P = CustomLinear(p, q, bias=False, weight_init=init).to(device)
-
-    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        x, y = x.flatten(1), y.flatten(1)
-        Px = self.P(x)
-        return F.mse_loss(Px, y) - 2 * (x.norm(dim=1) * y.norm(dim=1)) ** 2
+#     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+#         x, y = x.flatten(1), y.flatten(1)
+#         Px = x @ self.P.T
+#         return F.mse_loss(Px, y) - 2 * (x.norm(dim=1) * y.norm(dim=1)) ** 2
 
 
-class innerGW_kernel(nn.Module):
+# class SqGW_opt(nn.Module):
+#     def __init__(self, p, q,
+#                  init=None,
+#                  device=None) -> None:
+#         super().__init__()
+#         self.P = CustomLinear(p, q, bias=False, weight_init=init).to(device)
+
+#     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+#         x, y = x.flatten(1), y.flatten(1)
+#         Px = self.P(x)
+#         return F.mse_loss(Px, y) - 2 * (x.norm(dim=1) * y.norm(dim=1)) ** 2
+
+
+class innerGW_kernel(InnerGW_base):
     def __init__(self, kernel, source, mover, n_samples_mc=5) -> None:
-        super().__init__()
+        super().__init__(kernel)
         self._mover = [mover]  # Needed to prevent registering as a submodule
         self.kernel = kernel
         self.source = source
@@ -193,17 +229,3 @@ class innerGW_kernel(nn.Module):
             torch.einsum("bi,ij,jb->b", k_x_x1, k_y1_y2, k_x2_x) / self.n ** 2
 
         return cost
-
-
-def kernel_1(x: torch.Tensor, y: torch.Tensor, outer=False) -> torch.Tensor:
-    x, y = x.flatten(1), y.flatten(1)
-    if outer or x.size(0) != y.size(0):
-        x, y = x.unsqueeze(1), y.unsqueeze(0)
-    return x.norm(dim=-1) + y.norm(dim=-1) - .5 * (x - y).norm(dim=-1)
-
-
-def kernel_2(x: torch.Tensor, y: torch.Tensor, outer=False) -> torch.Tensor:
-    x, y = x.flatten(1), y.flatten(1)
-    if outer or x.size(0) != y.size(0):
-        x, y = x.unsqueeze(1), y.unsqueeze(0)
-    return torch.einsum("...i,...i->...", x, y)
