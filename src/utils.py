@@ -6,9 +6,8 @@ import itertools
 import h5py
 import numpy as np
 import torch
-import torchvision.datasets as datasets
-import torchvision.transforms as t
 
+from torchvision import datasets, transforms as t
 from tqdm.auto import tqdm
 
 
@@ -42,7 +41,8 @@ def load_mnist(root, transform=t.ToTensor(), train=True, verbose=True):
 
 def load_h5py(path, key=None, transform=t.ToTensor(), verbose=True):
     file = h5py.File(path, "r")
-    if key is None: key = next(iter(file.keys()))
+    if key is None:
+        key = next(iter(file.keys()))
     images = []
     for image in tqdm(file.get(key), disable=not verbose):
         images.append(transform(image))

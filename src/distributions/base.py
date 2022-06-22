@@ -31,7 +31,7 @@ class BasicDistribution:
     def to(self, device):
         self.device = device
 
-    def sample(self, sample_shape=torch.Size(), **kwargs):
+    def sample(self, sample_shape=(), **kwargs):
         raise NotImplementedError
 
 
@@ -45,7 +45,7 @@ class CompositeDistribution(BasicDistribution):
         super().to(device)
         self.component_labels.to(device)
 
-    def sample(self, sample_shape=torch.Size(), *, return_labels=False):
+    def sample(self, sample_shape=(), *, return_labels=False):
         raise NotImplementedError
 
     def sample_components(self, sample_shape, from_components=None):
@@ -64,7 +64,7 @@ class Uniform(BasicDistribution):
         self.high.to(device)
 
     @torch.no_grad()
-    def sample(self, sample_shape=torch.Size()):
+    def sample(self, sample_shape=()):
         sample_shape = torch.Size(sample_shape)
         random = torch.rand(sample_shape + self.event_shape,
                             dtype=self.low.dtype, device=self.device)
@@ -83,7 +83,7 @@ class Normal(BasicDistribution):
         self.scale.to(device)
 
     @torch.no_grad()
-    def sample(self, sample_shape=torch.Size()):
+    def sample(self, sample_shape=()):
         sample_shape = torch.Size(sample_shape)
         random = torch.randn(sample_shape + self.event_shape,
                              dtype=self.loc.dtype, device=self.device)
@@ -106,7 +106,7 @@ class DiscreteMixture(CompositeDistribution):
         self.probs.to(device)
         self.components.to(device)
 
-    def sample(self, sample_shape=torch.Size(), *, return_labels=False):
+    def sample(self, sample_shape=(), *, return_labels=False):
         sample_shape = torch.Size(sample_shape)
 
         indices = torch.multinomial(self.probs, sample_shape.numel(), replacement=True)
@@ -120,7 +120,7 @@ class DiscreteMixture(CompositeDistribution):
             return samples, labels
         return samples
 
-    def sample_components(self, sample_shape=torch.Size(), from_components=None):
+    def sample_components(self, sample_shape=(), from_components=None):
         sample_shape = torch.Size(sample_shape)
         if from_components is None:
             from_components = self.component_labels.tolist()
@@ -137,7 +137,8 @@ class GaussianMixture(DiscreteMixture):
     def __init__(self, locs, scales, *, probs=None, device=None):
         components = [Normal(loc, scale, device=device) for loc, scale in zip(locs, scales)]
         labels = torch.arange(0, locs.size(0))
-        if probs is None: probs = torch.ones_like(labels) / locs.size(0)
+        if probs is None:
+            probs = torch.ones_like(labels) / locs.size(0)
         super().__init__(components, probs, labels, device=device)
 
 
