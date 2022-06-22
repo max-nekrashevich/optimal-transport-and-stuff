@@ -16,7 +16,7 @@ def train(source: CompositeDistribution, target: BasicDistribution,
           mover: nn.Module, critic: nn.Module, cost: nn.Module, *,
           n_iter: int, n_samples: int,
           n_iter_mover: int = 10, n_iter_critic: int = 1, n_iter_cost: int = 0,
-          l: float = .05,
+          alpha: float = .05,
           optimizer=o.Adam,
           optimizer_params=dict(lr=5e-5),
           scheduler=None,
@@ -26,13 +26,14 @@ def train(source: CompositeDistribution, target: BasicDistribution,
           progress_bar=True):
     mover_optimizer = optimizer(mover.parameters(), **optimizer_params)
     critic_optimizer = optimizer(critic.parameters(), **optimizer_params)
+    if n_iter_cost:
+        cost_optimizer = optimizer(cost.parameters(), **optimizer_params)
+
     if scheduler is not None:
         mover_scheduler = scheduler(mover_optimizer, **scheduler_params)
         critic_scheduler = scheduler(critic_optimizer, **scheduler_params)
-    if n_iter_cost:
-        cost_optimizer = optimizer(cost.parameters(), **optimizer_params)
-        if scheduler is not None:
-            cost_scheduler = scheduler(cost_optimizer, **scheduler_params)
+    if scheduler is not None and n_iter_cost:
+        cost_scheduler = scheduler(cost_optimizer, **scheduler_params)
 
     if plotter: plotter.init_widget()
 
@@ -45,17 +46,17 @@ def train(source: CompositeDistribution, target: BasicDistribution,
         for _ in range(n_iter_cost):
             h_x = mover(x)
             cost_optimizer.zero_grad()
-            cost_val = l * cost(x, h_x).mean()
+            cost_val = alpha * cost(x, h_x).mean()
             cost_val.backward()
             cost_optimizer.step()
 
-        if n_iter_cost and scheduler is not None:
+        if scheduler is not None and n_iter_cost:
             cost_scheduler.step()
 
         for _ in range(n_iter_mover):
             h_x = mover(x)
             mover_optimizer.zero_grad()
-            cost_val = l * cost(x, h_x).mean()
+            cost_val = alpha * cost(x, h_x).mean()
             mover_loss = cost_val - critic(h_x).mean()
             mover_loss.backward()
             mover_optimizer.step()
@@ -77,12 +78,16 @@ def train(source: CompositeDistribution, target: BasicDistribution,
             _log(logger, "Transport", figure, advance=False, close=True)
 
         with torch.no_grad():
-            loss = critic(y).mean() + mover_loss
+            critic_h_x = critic(h_x).mean()
+            critic_y = critic(y).mean()
+            loss = critic_y + cost_val - critic_h_x
+
+        _log(logger, "critic(y)", critic_y.item(), advance=False)
+        _log(logger, "critic(h_x)", critic_h_x.item(), advance=False)
+        _log(logger, "cost", cost_val.item(), advance=False)
+        _log(logger, "loss", loss.item())
 
         progress_widget.set_postfix({"loss": loss.item()})
-
-        _log(logger, "loss", loss.item(), advance=False)
-        _log(logger, "cost", cost_val.item())
 
     if plotter:
         plotter.close_widget()
