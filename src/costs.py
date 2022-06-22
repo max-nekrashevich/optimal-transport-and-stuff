@@ -137,7 +137,6 @@ class InnerGW_conv(nn.Module):
             nn.utils.spectral_norm(nn.Conv2d(channels, channels, 3, padding=1, bias=False)),
             nn.utils.spectral_norm(nn.Conv2d(channels, channels, 3, padding=1, bias=False)),
             nn.utils.spectral_norm(nn.Conv2d(channels, 3, 3, padding=1, bias=False)),
-            nn.Sigmoid()
         ).to(device)
 
     def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
