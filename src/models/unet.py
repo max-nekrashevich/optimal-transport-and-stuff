@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -12,14 +11,13 @@ def unet_h(data_dim: tuple, n_blocks=4, base_channels=32, bilinear=True):
     return UNet(n_channels, n_channels, n_blocks, base_channels, bilinear)
 
 
-class DoubleConv(nn.Module):
+class DoubleConv(nn.Sequential):
     """(convolution => [BN] => ReLU) * 2"""
 
     def __init__(self, in_channels, out_channels, mid_channels=None):
-        super().__init__()
         if not mid_channels:
             mid_channels = out_channels
-        self.double_conv = nn.Sequential(
+        super().__init__(
             nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True),
@@ -28,22 +26,15 @@ class DoubleConv(nn.Module):
             nn.ReLU(inplace=True)
         )
 
-    def forward(self, x):
-        return self.double_conv(x)
 
-
-class Down(nn.Module):
+class Down(nn.Sequential):
     """Downscaling with maxpool then double conv"""
 
     def __init__(self, in_channels, out_channels):
-        super().__init__()
-        self.maxpool_conv = nn.Sequential(
+        super().__init__(
             nn.MaxPool2d(2),
             DoubleConv(in_channels, out_channels)
         )
-
-    def forward(self, x):
-        return self.maxpool_conv(x)
 
 
 class Up(nn.Module):
@@ -63,8 +54,8 @@ class Up(nn.Module):
     def forward(self, x1, x2):
         x1 = self.up(x1)
         # input is CHW
-        diffY = x2.size()[2] - x1.size()[2]
-        diffX = x2.size()[3] - x1.size()[3]
+        diffY = x2.size(2) - x1.size(2)
+        diffX = x2.size(3) - x1.size(3)
 
         x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
                         diffY // 2, diffY - diffY // 2])
@@ -80,11 +71,13 @@ class UNet(nn.Module):
         self.n_classes = out_channels
         self.bilinear = bilinear
 
-        self.inc = DoubleConv(in_channels, base_channels)
+        self.in_conv = DoubleConv(in_channels, base_channels)
+
         self.down_blocks = nn.ModuleList()
         for _ in range(n_blocks - 1):
             self.down_blocks.append(Down(base_channels, 2 * base_channels))
             base_channels *= 2
+
         factor = 1 if bilinear else 2
         self.down_blocks.append(Down(base_channels, factor * base_channels))
 
@@ -92,18 +85,18 @@ class UNet(nn.Module):
         for _ in range(n_blocks - 1):
             base_channels //= 2
             self.up_blocks.append(Up(4 * base_channels, base_channels * factor, bilinear))
+
         self.up_blocks.append(Up(2 * base_channels, base_channels))
-        self.outc = nn.Conv2d(base_channels, out_channels, kernel_size=1)
+
+        self.out_conv = nn.Conv2d(base_channels, out_channels, kernel_size=1)
 
     def forward(self, x):
-        comp_stack = [self.inc(x)]
+        comp_stack = [self.in_conv(x)]
         for block in self.down_blocks:
             comp_stack.append(block(comp_stack[-1]))
 
+        x = comp_stack.pop()
         for block in self.up_blocks:
-            x1 = comp_stack.pop()
-            x2 = comp_stack.pop()
-            comp_stack.append(block(x1, x2))
+            x = block(x, comp_stack.pop())
 
-        logits = self.outc(comp_stack[0])
-        return logits
+        return self.out_conv(x)
