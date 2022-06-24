@@ -1,8 +1,10 @@
-from torch.utils.tensorboard import SummaryWriter
-from matplotlib.figure import Figure
-from torch import Tensor
+import typing as tp
+
 import wandb
 
+from matplotlib.figure import Figure
+from torch import Tensor
+from torch.utils.tensorboard.writer import SummaryWriter
 
 
 class Logger:
@@ -13,8 +15,14 @@ class Logger:
     def advance(self) -> None:
         self.step += 1
 
-    def log(self, tag: str, data, **kwargs):
-        raise NotImplementedError
+    def log(self, tag: str, data: tp.Any, advance=True, **kwargs):
+        raise NotImplementedError()
+
+    def log_dict(self, dct: tp.Dict[str, tp.Any], advance=True, **kwargs):
+        raise NotImplementedError()
+
+    def finish(self) -> None:
+        raise NotImplementedError()
 
 
 class TensorBoardLogger(Logger):
@@ -23,14 +31,21 @@ class TensorBoardLogger(Logger):
         self.logger = SummaryWriter(**self.logger_params)
         self.step = 0
 
-    def log(self, tag, data, advance=True, **kwargs):
+    def log(self, tag: str, data: tp.Any, advance=True, **kwargs):
         if isinstance(data, Figure):
             self.logger.add_figure(tag, data, self.step, **kwargs)
         elif isinstance(data, Tensor):
             self.logger.add_image(tag, data, self.step, **kwargs)
         elif isinstance(data, float) or isinstance(data, str):
             self.logger.add_scalar(tag, data, self.step, **kwargs)
-        if advance: self.advance()
+        if advance:
+            self.advance()
+
+    def log_dict(self, dct: tp.Dict[str, tp.Any], advance=True, **kwargs):
+        for tag, data in dct.items():
+            self.log(tag, data, advance=False, **kwargs)
+        if advance:
+            self.advance()
 
     def finish(self):
         self.logger.close()
@@ -48,7 +63,13 @@ class WandbLogger(Logger):
 
     def log(self, tag, data, advance=True, **kwargs):
         self.logger.log({tag: data}, self.step)
-        if advance: self.advance()
+        if advance:
+            self.advance()
+
+    def log_dict(self, dct: tp.Dict[str, tp.Any], advance=True, **kwargs):
+        self.logger.log(dct, self.step)
+        if advance:
+            self.advance()
 
     def finish(self):
         wandb.finish()
