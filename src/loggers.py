@@ -16,13 +16,15 @@ class Logger:
         self.step += 1
 
     def log(self, tag: str, data: tp.Any, advance=True, **kwargs):
-        raise NotImplementedError()
+        if advance:
+            self.advance()
 
     def log_dict(self, dct: tp.Dict[str, tp.Any], advance=True, **kwargs):
-        raise NotImplementedError()
+        if advance:
+            self.advance()
 
     def finish(self) -> None:
-        raise NotImplementedError()
+        pass
 
 
 class TensorBoardLogger(Logger):
