@@ -89,3 +89,13 @@ def nwise(iterable, n=2):
     for i, it in enumerate(iters):
         next(itertools.islice(it, i, i), None)
     return zip(*iters)
+
+
+def _init_opt_or_sch(type, params, init_arg, base_type, base_params):
+    type = type or base_type
+    params = {**base_params, **params}
+    return type(init_arg, **params)
+
+
+def filter_dict(dct, keys):
+    return {k: dct[k] for k in keys if k in dct}

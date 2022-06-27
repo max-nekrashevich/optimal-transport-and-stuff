@@ -23,11 +23,11 @@ class Plotter:
                  n_samples=50, plot_interval=25, show=True,
                  **plot_params):
         self._backend = _backends[backend]
-        self.plot_interval = plot_interval
+        # self.plot_interval = plot_interval
         self.show = show
         self.n_samples = n_samples
         self.plot_params = plot_params
-        self._step_num = -1
+        # self._step_num = -1
 
     def init_widget(self):
         self._widget = Output()
@@ -39,13 +39,13 @@ class Plotter:
 
     def _get_step_figure(self, x, y, h_x, labels, *, critic=None):
         return self._backend.get_transport_figure(x, y, h_x, labels,
-                                                       critic=critic,
-                                                       **self.plot_params)
+                                                  critic=critic,
+                                                  **self.plot_params)
 
     def plot_step(self, x, y, h_x, labels, *, critic=None):
-        self._step_num += 1
-        if self._step_num % self.plot_interval != 0:
-            return None
+        # self._step_num += 1
+        # if self._step_num % self.plot_interval != 0:
+        #     return None
         with self._widget:
             interrupted = True
             try:
@@ -72,5 +72,5 @@ class Plotter:
 class ImagePlotter(Plotter):
     def _get_step_figure(self, x, y, h_x, labels, *, critic=None):
         return self._backend.get_images_figure(x, y, h_x, labels,
-                                                       critic=critic,
-                                                       **self.plot_params)
+                                               critic=critic,
+                                               **self.plot_params)
