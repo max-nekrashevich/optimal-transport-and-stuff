@@ -20,8 +20,7 @@ _backends = {"matplotlib": mpl,
 
 class Plotter:
     def __init__(self, backend="matplotlib", *,
-                 n_samples=50, plot_interval=25, show=True,
-                 **plot_params):
+                 n_samples=50, show=True, **plot_params):
         self._backend = _backends[backend]
         # self.plot_interval = plot_interval
         self.show = show
@@ -43,9 +42,6 @@ class Plotter:
                                                   **self.plot_params)
 
     def plot_step(self, x, y, h_x, labels, *, critic=None):
-        # self._step_num += 1
-        # if self._step_num % self.plot_interval != 0:
-        #     return None
         with self._widget:
             interrupted = True
             try:
