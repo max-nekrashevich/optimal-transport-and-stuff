@@ -16,16 +16,25 @@ from .utils import filter_dict, _init_opt_or_sch
 class Experiment:
     def __init__(self, mover: nn.Module, critic: nn.Module, cost: Cost,
                  source: CompositeDistribution, target: BasicDistribution, *,
-                 num_samples: int,
-                 num_steps_train: int = 50,
-                 num_steps_eval: int = 50,
                  source_eval: tp.Optional[CompositeDistribution] = None,
                  target_eval: tp.Optional[BasicDistribution] = None,
+                 num_samples: int = 64,
+                 num_steps_train: int = 50,
+                 num_steps_eval: int = 50,
                  num_steps_mover: int = 10,
                  num_steps_critic: int = 1,
                  num_steps_cost: int = 0,
                  nested_train_step: bool = False,
-                 alpha: float = .05) -> None:
+                 alpha: float = .05,
+                 optimizer: type = o.Adam,
+                 optimizer_params: tp.Dict = dict(lr=5e-5),
+                 optimizer_mover: tp.Optional[type] = None,
+                 optimizer_critic: tp.Optional[type] = None,
+                 optimizer_cost: tp.Optional[type] = None,
+                 optimizer_params_mover: tp.Dict = dict(),
+                 optimizer_params_critic: tp.Dict = dict(),
+                 optimizer_params_cost: tp.Dict = dict(),
+                 ) -> None:
         self.mover = mover
         self.critic = critic
         self.cost = cost
@@ -43,38 +52,29 @@ class Experiment:
         self.target = target
         self.source_eval = source_eval or source
         self.target_eval = target_eval or target
+
+        self.train_steps_total = 0
+        self.eval_steps_total = 0
         self.x_eval, self.labels_eval = self.source_eval.sample(
             (self.num_samples,), return_labels=True)
         self.y_eval = self.target_eval.sample((self.num_samples,))
 
-        self._init_optimizers = False
-        self._init_schedulers = False
-
-        self.train_steps_total = 0
-        self.eval_steps_total = 0
-
-    def init_optimizers(self, type: type = o.Adam,
-                        params: tp.Dict = dict(lr=5e-5), *,
-                        type_mover: tp.Optional[type] = None,
-                        type_critic: tp.Optional[type] = None,
-                        type_cost: tp.Optional[type] = None,
-                        params_mover: tp.Dict = dict(),
-                        params_critic: tp.Dict = dict(),
-                        params_cost: tp.Dict = dict()) -> "Experiment":
         self.mover_optimizer = _init_opt_or_sch(
-            type_mover, params_mover, self.mover.parameters(), type, params)
+            optimizer_mover, optimizer_params_mover,
+            self.mover.parameters(), optimizer, optimizer_params)
 
         self.critic_optimizer = _init_opt_or_sch(
-            type_critic, params_critic, self.critic.parameters(), type, params)
+            optimizer_critic, optimizer_params_critic,
+            self.critic.parameters(), optimizer, optimizer_params)
 
         if list(self.cost.parameters()):
             self.cost_optimizer = _init_opt_or_sch(
-                type_cost, params_cost, self.cost.parameters(), type, params)
+                optimizer_cost, optimizer_params_cost,
+                self.cost.parameters(), optimizer, optimizer_params)
         else:
             self.cost_optimizer = None
 
-        self._init_optimizers = True
-        return self
+        self._init_schedulers = False
 
     def init_schedulers(self, type: type, params: tp.Dict, *,
                         type_mover: tp.Optional[type] = None,
@@ -234,8 +234,6 @@ class Experiment:
             logger: Logger = Logger(),
             plotter: tp.Optional[Plotter] = None,
             show_progress: bool = True) -> None:
-        assert self._init_optimizers, \
-            "Optimizers not initialized. Initialize using `init_optimizers`."
         assert (self.cost_optimizer is None) or (self.num_steps_cost == 0), \
             "Cost is not optimizable, so `num_steps_cost` mus be set to zero."
 
@@ -279,12 +277,10 @@ def run_experiment(source: CompositeDistribution, target: BasicDistribution,
                    mover: nn.Module, critic: nn.Module, cost: Cost, *,
                    num_epochs: int,
                    logger=Logger(), plotter=None, show_progress=True,
-                   optimizer_params=dict(),
                    scheduler_params=dict(),
-                   **init_kwargs):
+                   **config):
     experiment = Experiment(mover, critic, cost, source, target,
-                            **init_kwargs)
-    experiment.init_optimizers(**optimizer_params)
+                            **config)
     if scheduler_params:
         experiment.init_schedulers(**scheduler_params)
     experiment.run(num_epochs,
