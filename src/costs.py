@@ -4,6 +4,7 @@ import geotorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils.spectral_norm import spectral_norm
 
 
 def kernel_1(x: torch.Tensor, y: torch.Tensor, outer=False) -> torch.Tensor:
@@ -77,7 +78,8 @@ class Cost(nn.Module):
     def get_functional(self,
                        x: torch.Tensor,
                        x_prime: torch.Tensor,
-                       mover: nn.Module) -> torch.Tensor:
+                       h_x: torch.Tensor,
+                       h_x_prime: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError()
 
 
@@ -87,9 +89,11 @@ class InnerGW_base(Cost):
         self.kernel = kernel
 
     @torch.no_grad()
-    def get_functional(self, x: torch.Tensor, x_prime: torch.Tensor, mover: nn.Module) -> torch.Tensor:
-        h_x = mover(x)
-        h_x_prime = mover(x_prime)
+    def get_functional(self,
+                       x: torch.Tensor,
+                       x_prime: torch.Tensor,
+                       h_x: torch.Tensor,
+                       h_x_prime: torch.Tensor) -> torch.Tensor:
         return torch.mean((self.kernel(x, x_prime, outer=True) -
                            self.kernel(h_x, h_x_prime, outer=True)) ** 2)
 
@@ -122,7 +126,7 @@ class InnerGW_opt(InnerGW_base):
     def __init__(self, p, q, init=None, device=None) -> None:
         super().__init__(kernel_2)
         self.P = CustomLinear(p, q, bias=False, weight_init=init).to(device)
-        geotorch.sphere(self.P, "weight")
+        geotorch.sphere(self.P, "weight")  # type: ignore
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         x, y = x.flatten(1), y.flatten(1)
@@ -166,13 +170,13 @@ class InnerGW_conv(InnerGW_base):
     def __init__(self, channels=16, depth=4, device=None) -> None:
         super().__init__(kernel_2)
         layers = [
-            nn.utils.spectral_norm(nn.Conv2d(channels, channels, 3, padding=1, bias=False))
+            spectral_norm(nn.Conv2d(channels, channels, 3, padding=1, bias=False))
             for _ in range(2, depth)
         ]
         self.P = nn.Sequential(
-            nn.utils.spectral_norm(nn.Conv2d(3, channels, 3, padding=1, bias=False)),
+            spectral_norm(nn.Conv2d(3, channels, 3, padding=1, bias=False)),
             *layers,
-            nn.utils.spectral_norm(nn.Conv2d(channels, 3, 3, padding=1, bias=False)),
+            spectral_norm(nn.Conv2d(channels, 3, 3, padding=1, bias=False)),
         ).to(device)
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:

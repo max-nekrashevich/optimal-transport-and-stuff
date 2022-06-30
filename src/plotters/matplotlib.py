@@ -40,7 +40,7 @@ def _get_grid_dims(n_plots):
 
 
 def plot_heatmap(heatmap, xlim, ylim=None, *, ax=None, **imshow_kwargs):
-    if ax is None: ax = plt.gca()
+    ax = ax or plt.gca()
     yticks, xticks = heatmap.shape
     ylim = ylim or xlim
     dx = .5 * (xlim[1] - xlim[0]) / (xticks - 1)
@@ -51,19 +51,19 @@ def plot_heatmap(heatmap, xlim, ylim=None, *, ax=None, **imshow_kwargs):
 
 @torch.no_grad()
 def plot_samples(samples: torch.Tensor, ax=None, **scatter_kwargs):
-    if ax is None: ax = plt.gca()
+    ax = ax or plt.gca()
     ax.scatter(*samples.cpu().numpy().T, **scatter_kwargs)
 
 
 @torch.no_grad()
 def show_image(image: torch.Tensor, ax=None, **imshow_kwargs):
-    if ax is None: ax = plt.gca()
+    ax = ax or plt.gca()
     ax.imshow(to_pil_image(image.cpu().clamp(0, 1)), **imshow_kwargs)
 
 
 @torch.no_grad()
 def plot_quiver(from_, to_, *, ax=None, **quiver_kwargs):
-    if ax is None: ax = plt.gca()
+    ax = ax or plt.gca()
     origins = from_.cpu().numpy().T
     lengths = (to_ - from_).cpu().numpy().T
     if len(origins) == 2:
@@ -110,7 +110,7 @@ def plot_transport(x, y, h_x, labels, *, critic=None, ax=None,
     source_dim = x.shape[1:]
     target_dim = y.shape[1:]
     components = labels.unique()
-    if ax is None: ax = plt.gca()
+    ax = ax or plt.gca()
 
     if plot_source and source_dim == target_dim:
         for component, color in zip(components, cycle(source_colors)):
@@ -183,7 +183,8 @@ def get_images_figure(x, y, h_x, labels, *, critic, n_images,
             ax.set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
             ax.set_title(f"Component {label}")
     plt.tight_layout()
-    if show: plt.show(block=False)
+    if show:
+        plt.show(block=False)
     return figure
 
 

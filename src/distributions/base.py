@@ -38,7 +38,8 @@ class BasicDistribution:
 class CompositeDistribution(BasicDistribution):
     def __init__(self, event_shape, component_labels, device):
         self.component_labels = _to_tensor(component_labels, device)
-        self._component_ix = {c.item(): ix for ix, c in enumerate(self.component_labels)}
+        self._component_ix = {c.item(): ix
+                              for ix, c in enumerate(self.component_labels)}
         super().__init__(event_shape, device)
 
     def to(self, device):
@@ -109,8 +110,10 @@ class DiscreteMixture(CompositeDistribution):
     def sample(self, sample_shape=(), *, return_labels=False):
         sample_shape = torch.Size(sample_shape)
 
-        indices = torch.multinomial(self.probs, sample_shape.numel(), replacement=True)
-        samples = torch.empty(sample_shape.numel(), *self.event_shape, device=self.device)
+        indices = torch.multinomial(self.probs, sample_shape.numel(),
+                                    replacement=True)
+        samples = torch.empty(sample_shape.numel(), *self.event_shape,
+                              device=self.device)
         for index, count in Counter(indices.tolist()).items():
             samples[indices == index] = self.components[index].sample((count,))
         samples = samples.view(sample_shape + self.event_shape)
@@ -128,14 +131,16 @@ class DiscreteMixture(CompositeDistribution):
             return self.sample(sample_shape)
         samples = []
         for label in from_components:
-            samples.append(self.components[self._component_ix[label]].sample(sample_shape))
+            samples.append(
+                self.components[self._component_ix[label]].sample(sample_shape))
         samples = torch.stack(samples)
         return samples
 
 
 class GaussianMixture(DiscreteMixture):
     def __init__(self, locs, scales, *, probs=None, device=None):
-        components = [Normal(loc, scale, device=device) for loc, scale in zip(locs, scales)]
+        components = [Normal(loc, scale, device=device)
+                      for loc, scale in zip(locs, scales)]
         labels = torch.arange(0, locs.size(0))
         if probs is None:
             probs = torch.ones_like(labels) / locs.size(0)
