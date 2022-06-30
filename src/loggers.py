@@ -24,9 +24,9 @@ class WandbLogger(Logger):
     def start(self) -> None:
         self.logger = wandb.init(**self.logger_params)
         wandb.define_metric("train/step")
-        wandb.define_metric("eval/step")
+        wandb.define_metric("epoch")
         wandb.define_metric("train/*", step_metric="train/step")
-        wandb.define_metric("eval/*", step_metric="eval/step")
+        wandb.define_metric("eval/*", step_metric="epoch")
 
     def log_hparams(self, hparams) -> None:
         wandb.config.update(hparams)

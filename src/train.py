@@ -1,16 +1,19 @@
 import typing as tp
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as o
-
 from tqdm.auto import tqdm
 
 from .costs import Cost
 from .distributions import BasicDistribution, CompositeDistribution
 from .loggers import Logger
 from .plotters import Plotter
-from .utils import filter_dict, _init_opt_or_sch
+from .utils import (_init_opt_or_sch,
+                    calculate_frechet_distance,
+                    filter_dict,
+                    get_inception_statistics)
 
 
 class Experiment:
@@ -26,6 +29,9 @@ class Experiment:
                  num_steps_cost: int = 0,
                  nested_train_step: bool = False,
                  alpha: float = .05,
+                 use_fid: bool = True,
+                 fid_mu: tp.Optional[np.ndarray] = None,
+                 fid_sigma: tp.Optional[np.ndarray] = None,
                  optimizer: type = o.Adam,
                  optimizer_params: tp.Dict = dict(lr=5e-5),
                  optimizer_mover: tp.Optional[type] = None,
@@ -47,6 +53,7 @@ class Experiment:
         self.num_steps_cost = num_steps_cost
         self.nested_train_step = nested_train_step
         self.alpha = alpha
+        self.compute_fid = use_fid
 
         self.source = source
         self.target = target
@@ -54,10 +61,20 @@ class Experiment:
         self.target_eval = target_eval or target
 
         self.train_steps_total = 0
-        self.eval_steps_total = 0
+        self.epochs_total = 0
         self.x_eval, self.labels_eval = self.source_eval.sample(
             (self.num_samples,), return_labels=True)
         self.y_eval = self.target_eval.sample((self.num_samples,))
+
+        if use_fid:
+            mu_eval = None
+            sigma_eval = None
+            if fid_mu is None or fid_sigma is None:
+                mu_eval, sigma_eval = get_inception_statistics(
+                    self.target_eval.features,  # type: ignore
+                    self.num_samples, verbose=True)
+            self.mu_eval = mu_eval if fid_mu is None else fid_mu
+            self.sigma_eval = sigma_eval if fid_sigma is None else fid_sigma
 
         self.mover_optimizer = _init_opt_or_sch(
             optimizer_mover, optimizer_params_mover,
@@ -109,13 +126,6 @@ class Experiment:
                 "train/critic(y)": critic_y,
                 "train/loss": loss}
 
-    @torch.no_grad()
-    def compute_metrics(self, x: torch.Tensor, y: torch.Tensor) -> tp.Dict:
-        x_prime = self.source.sample((self.num_samples,))
-        gw = self.cost.get_functional(x, x_prime, self.mover).item()
-        # TODO
-        return {"eval/GW": gw}
-
     def _train_step_sequential(self, x: torch.Tensor, y: torch.Tensor) -> None:
         for _ in range(self.num_steps_cost):
             self.cost_optimizer.zero_grad()  # type: ignore
@@ -132,6 +142,8 @@ class Experiment:
             mover_loss.backward()
             self.mover_optimizer.step()
 
+        h_x = self.mover(x)
+
         for _ in range(self.num_steps_critic):
             self.critic_optimizer.zero_grad()
             critic_loss = self.critic(h_x.detach()).mean() - \
@@ -141,6 +153,7 @@ class Experiment:
 
     def _train_step_nested(self, x: torch.Tensor, y: torch.Tensor) -> None:
         for _ in range(self.num_steps_critic):
+            h_x = self.mover(x)
 
             for _ in range(self.num_steps_mover):
 
@@ -210,32 +223,47 @@ class Experiment:
         self.critic.eval()
         self.cost.eval()
 
-        for step in range(self.num_steps_eval):
+        GWs: tp.List[float] = []
+
+        h_xs: tp.List[torch.Tensor] = []
+
+        for _ in range(self.num_steps_eval):
             x = self.source_eval.sample((self.num_samples,))
-            y = self.target_eval.sample((self.num_samples,))
-            metrics = self.compute_metrics(x, y)
+            # y = self.target_eval.sample((self.num_samples,))
+            h_x = self.mover(x)
+            h_xs.append(h_x)
+
+            x_prime = self.source.sample((self.num_samples,))
+            h_x_prime = self.mover(x_prime)
+            GWs.append(self.cost.get_functional(x, x_prime,
+                                                h_x, h_x_prime).item())
 
             progress.update()
-            progress.set_postfix(filter_dict(metrics, ["GW"]))
-            logger.log("eval/step", self.eval_steps_total + step,
-                       commit=False)
-            logger.log_dict(metrics)
+            progress.set_postfix({"GW": GWs[-1]})
 
-        self.eval_steps_total += self.num_steps_eval
+        metrics = {"eval/GW": np.mean(GWs)}
+        if self.compute_fid:
+            mu, sigma = get_inception_statistics(
+                torch.cat(h_xs), self.num_samples)
+            metrics["eval/FID"] = calculate_frechet_distance(
+                mu, sigma, self.mu_eval, self.sigma_eval)
+
+        logger.log_dict(metrics, step=self.epochs_total)
 
         if plotter is not None:
             h_x = self.mover(self.x_eval)
             figure = plotter.plot_step(self.x_eval, self.y_eval, h_x,
                                        self.labels_eval, critic=self.critic)
             logger.log("eval/transport", figure, close=True,
-                       step=self.eval_steps_total)
+                       step=self.epochs_total)
 
     def run(self, num_epochs: int, *,
             logger: Logger = Logger(),
             plotter: tp.Optional[Plotter] = None,
             show_progress: bool = True) -> None:
-        assert (self.cost_optimizer is None) or (self.num_steps_cost == 0), \
-            "Cost is not optimizable, so `num_steps_cost` mus be set to zero."
+        assert (self.cost_optimizer is not None) or \
+            (self.num_steps_cost == 0), \
+            "Cost is not optimizable, so `num_steps_cost` must be set to zero."
 
         epoch_progress = tqdm(range(num_epochs), desc="Epoch",
                               disable=not show_progress)
@@ -251,10 +279,12 @@ class Experiment:
                 plotter.init_widget()
 
             for _ in epoch_progress:
+                logger.log("epoch", self.epochs_total, commit=False)
                 self._train_epoch(train_progress, logger, plotter)
                 self._eval_epoch(eval_progress, logger, plotter)
                 train_progress.reset()
                 eval_progress.reset()
+                self.epochs_total += 1
 
             if plotter:
                 plotter.close_widget()
