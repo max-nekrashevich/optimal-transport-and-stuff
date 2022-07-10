@@ -19,6 +19,18 @@ class Logger:
     def finish(self) -> None:
         pass
 
+    @property
+    def name(self) -> tp.Optional[str]:
+        return self.logger_params.get("name")
+
+    @name.setter
+    def name(self, name) -> None:
+        self.logger_params["name"] = name
+
+    @name.deleter
+    def name(self) -> None:
+        del self.logger_params["name"]
+
 
 class WandbLogger(Logger):
     def start(self) -> None:
@@ -39,3 +51,9 @@ class WandbLogger(Logger):
 
     def finish(self) -> None:
         wandb.finish()
+
+    @Logger.name.getter
+    def name(self) -> tp.Optional[str]:
+        if wandb.run is not None:
+            return wandb.run.name
+        return super().name

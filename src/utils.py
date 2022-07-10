@@ -2,6 +2,7 @@ import copy
 import functools
 import inspect
 import itertools
+import pathlib
 
 import h5py
 import numpy as np
@@ -85,6 +86,25 @@ def initializer(func):
 
 def copy_models(*models):
     return [copy.deepcopy(model) for model in models]
+
+
+def load_models(path, verbose=True, map_location=None, **models):
+    path = pathlib.Path(path)
+    if verbose:
+        print("Loading models from", path)
+    for model_name, model in models.items():
+        model.load_state_dict(torch.load(f"{path}/{model_name}.torch",
+                                         map_location=map_location))
+
+
+def save_models(path, verbose=True, **models):
+    path = pathlib.Path(path)
+    if not path.exists():
+        path.mkdir()
+    if verbose:
+        print("Saving models to", path)
+    for model_name, model in models.items():
+        torch.save(model.state_dict(), f"{path}/{model_name}.torch")
 
 
 def nwise(iterable, n=2):

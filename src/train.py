@@ -1,4 +1,5 @@
 import typing as tp
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -13,7 +14,7 @@ from .plotters import Plotter
 from .utils import (_init_opt_or_sch,
                     calculate_frechet_distance,
                     filter_dict,
-                    get_inception_statistics)
+                    get_inception_statistics, save_models)
 
 
 class Experiment:
@@ -40,6 +41,8 @@ class Experiment:
                  optimizer_params_mover: tp.Dict = dict(),
                  optimizer_params_critic: tp.Dict = dict(),
                  optimizer_params_cost: tp.Dict = dict(),
+                 name: tp.Optional[str] = None,
+                 checkpoint_dir: tp.Optional[Path] = None,
                  ) -> None:
         self.mover = mover
         self.critic = critic
@@ -75,6 +78,9 @@ class Experiment:
                     self.num_samples, verbose=True)
             self.mu_eval = mu_eval if fid_mu is None else fid_mu
             self.sigma_eval = sigma_eval if fid_sigma is None else fid_sigma
+
+        self.name = name
+        self.checkpoint_dir = checkpoint_dir
 
         self.mover_optimizer = _init_opt_or_sch(
             optimizer_mover, optimizer_params_mover,
@@ -152,18 +158,16 @@ class Experiment:
             self.critic_optimizer.step()
 
     def _train_step_nested(self, x: torch.Tensor, y: torch.Tensor) -> None:
-        for _ in range(self.num_steps_critic):
+        for _ in range(self.num_steps_cost):
+            self.cost_optimizer.zero_grad()  # type: ignore
             h_x = self.mover(x)
+            cost = self.alpha * self.cost(x, h_x).mean()
+            cost.backward()
+            self.cost_optimizer.step()  # type: ignore
+
+        for _ in range(self.num_steps_critic):
 
             for _ in range(self.num_steps_mover):
-
-                for _ in range(self.num_steps_cost):
-                    self.cost_optimizer.zero_grad()  # type: ignore
-                    h_x = self.mover(x)
-                    cost = self.alpha * self.cost(x, h_x).mean()
-                    cost.backward()
-                    self.cost_optimizer.step()  # type: ignore
-
                 self.mover_optimizer.zero_grad()
                 h_x = self.mover(x)
                 cost = self.alpha * self.cost(x, h_x).mean()
@@ -171,6 +175,7 @@ class Experiment:
                 mover_loss.backward()
                 self.mover_optimizer.step()
 
+            h_x = self.mover(x)
             self.critic_optimizer.zero_grad()
             critic_loss = self.critic(h_x.detach()).mean() - \
                 self.critic(y).mean()
@@ -272,7 +277,9 @@ class Experiment:
         eval_progress = tqdm(total=self.num_steps_eval, desc="Validating",
                              disable=not show_progress, leave=False)
 
+        logger.name = self.name
         logger.start()
+        self.name = logger.name
 
         try:
             if plotter:
@@ -301,12 +308,18 @@ class Experiment:
             train_progress.close()
             eval_progress.close()
             logger.finish()
+            if self.checkpoint_dir is not None:
+                path = (self.checkpoint_dir /
+                        f"{self.name}_epoch={self.epochs_total}")
+                save_models(path, mover=self.mover, critic=self.critic,
+                            cost=self.cost, verbose=show_progress)
 
 
 def run_experiment(source: CompositeDistribution, target: BasicDistribution,
                    mover: nn.Module, critic: nn.Module, cost: Cost, *,
                    num_epochs: int,
-                   logger=Logger(), plotter=None, show_progress=True,
+                   logger=Logger(),
+                   plotter=None, show_progress=True,
                    scheduler_params=dict(),
                    **config):
     experiment = Experiment(mover, critic, cost, source, target,
