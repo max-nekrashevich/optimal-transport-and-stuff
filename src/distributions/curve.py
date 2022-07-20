@@ -22,6 +22,11 @@ class CurveDistribution(BasicDistribution):
         t_samples = self.t_distribution.sample(sample_shape)
         return self.curve(t_samples)
 
+    @property
+    def mean(self):
+        t = torch.linspace(0., 1., device=self.device)
+        return self.curve(t).mean(0)
+
 
 class Curve:
     def __init__(self, device) -> None:

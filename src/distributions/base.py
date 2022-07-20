@@ -32,7 +32,11 @@ class BasicDistribution:
         self.device = device
 
     def sample(self, sample_shape=(), **kwargs):
-        raise NotImplementedError
+        raise NotImplementedError()
+
+    @property
+    def mean(self):
+        raise NotImplementedError()
 
 
 class CompositeDistribution(BasicDistribution):
@@ -47,10 +51,11 @@ class CompositeDistribution(BasicDistribution):
         self.component_labels.to(device)
 
     def sample(self, sample_shape=(), *, return_labels=False):
-        raise NotImplementedError
+        raise NotImplementedError()
 
     def sample_components(self, sample_shape, from_components=None):
-        raise NotImplementedError
+        raise NotImplementedError()
+
 
 
 class Uniform(BasicDistribution):
@@ -71,6 +76,10 @@ class Uniform(BasicDistribution):
                             dtype=self.low.dtype, device=self.device)
         return self.low + random * (self.high - self.low)
 
+    @property
+    def mean(self):
+        return (self.high - self.low) / 2
+
 
 class Normal(BasicDistribution):
     def __init__(self, loc, scale, *, device=None):
@@ -89,6 +98,10 @@ class Normal(BasicDistribution):
         random = torch.randn(sample_shape + self.event_shape,
                              dtype=self.loc.dtype, device=self.device)
         return self.loc + random * self.scale
+
+    @property
+    def mean(self):
+        return self.loc
 
 
 class DiscreteMixture(CompositeDistribution):
@@ -135,6 +148,11 @@ class DiscreteMixture(CompositeDistribution):
                 self.components[self._component_ix[label]].sample(sample_shape))
         samples = torch.stack(samples)
         return samples
+
+    @property
+    def mean(self):
+        means = torch.stack([c.mean for c in self.components], -1)
+        return torch.sum(self.probs * means, -1)
 
 
 class GaussianMixture(DiscreteMixture):

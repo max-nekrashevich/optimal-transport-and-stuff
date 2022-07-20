@@ -47,3 +47,7 @@ class TensorDatasetDistribution(CompositeDistribution):
         indices = torch.stack(indices)
 
         return self.features[indices].to(self.device)
+
+    @property
+    def mean(self):
+        return self.features.mean(0)
