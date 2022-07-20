@@ -223,7 +223,10 @@ class Experiment:
                 self.cost_scheduler.step()
 
     @torch.no_grad()
-    def _eval_epoch(self, progress, logger, plotter) -> None:
+    def eval_epoch(self, progress_bar: tp.Optional[tqdm] = None) -> tp.Dict:
+        if progress_bar is None:
+            progress_bar = tqdm(total=self.num_steps_eval,
+                                desc="Validating", leave=False)
         self.mover.eval()
         self.critic.eval()
         self.cost.eval()
@@ -243,8 +246,10 @@ class Experiment:
             GWs.append(self.cost.get_functional(x, x_prime,
                                                 h_x, h_x_prime).item())
 
-            progress.update()
-            progress.set_postfix({"GW": GWs[-1]})
+            progress_bar.update()
+            progress_bar.set_postfix({"GW": GWs[-1]})
+
+        progress_bar.reset()
 
         metrics = {"eval/GW": np.mean(GWs)}
         if self.compute_fid:
@@ -253,19 +258,13 @@ class Experiment:
             metrics["eval/FID"] = calculate_frechet_distance(
                 mu, sigma, self.mu_eval, self.sigma_eval)
 
-        logger.log_dict(metrics, step=self.epochs_total)
+        return metrics
 
-        if plotter is not None:
-            h_x = self.mover(self.x_eval)
-            figure = plotter.plot_step(self.x_eval, self.y_eval, h_x,
-                                       self.labels_eval, critic=self.critic)
-            logger.log("eval/transport", figure, close=True,
-                       step=self.epochs_total)
-
-    def run(self, num_epochs: int, *,
-            logger: Logger = Logger(),
-            plotter: tp.Optional[Plotter] = None,
-            show_progress: bool = True) -> None:
+    def train(self, num_epochs: int, *,
+              logger: Logger = Logger(),
+              plotter: tp.Optional[Plotter] = None,
+              show_progress: bool = True,
+              eval: bool = True) -> None:
         assert (self.cost_optimizer is not None) or \
             (self.num_steps_cost == 0), \
             "Cost is not optimizable, so `num_steps_cost` must be set to zero."
@@ -274,8 +273,9 @@ class Experiment:
                               disable=not show_progress)
         train_progress = tqdm(total=self.num_steps_train, desc="Training",
                               disable=not show_progress, leave=False)
-        eval_progress = tqdm(total=self.num_steps_eval, desc="Validating",
-                             disable=not show_progress, leave=False)
+        if eval:
+            eval_progress = tqdm(total=self.num_steps_eval, desc="Validating",
+                                disable=not show_progress, leave=False)
 
         logger.name = self.name
         logger.start()
@@ -288,10 +288,22 @@ class Experiment:
             for _ in epoch_progress:
                 logger.log("epoch", self.epochs_total, commit=False)
                 self._train_epoch(train_progress, logger, plotter)
-                self._eval_epoch(eval_progress, logger, plotter)
+                if eval:
+                    metrics = self.eval_epoch(eval_progress)
+                    logger.log_dict(metrics, step=self.epochs_total)
+                    if plotter is None:
+                        continue
+                    h_x = self.mover(self.x_eval)
+                    figure = plotter.plot_step(self.x_eval, self.y_eval, h_x,
+                                               self.labels_eval,
+                                               critic=self.critic)
+                    logger.log("eval/transport", figure, close=True,
+                            step=self.epochs_total)
                 train_progress.reset()
-                eval_progress.reset()
                 self.epochs_total += 1
+
+
+
 
             if plotter:
                 plotter.close_widget()
@@ -299,20 +311,25 @@ class Experiment:
                                           self.mover, critic=self.critic)
                 logger.log("train/result", figure, close=True)
                 figure = plotter.plot_end(self.source_eval, self.target_eval,
-                                          self.mover, critic=self.critic)
+                                        self.mover, critic=self.critic)
                 logger.log("eval/result", figure, close=True)
 
         except KeyboardInterrupt:
             pass
         finally:
             train_progress.close()
-            eval_progress.close()
+            if eval:
+                eval_progress.close()
             logger.finish()
-            if self.checkpoint_dir is not None:
-                path = (self.checkpoint_dir /
-                        f"{self.name}_epoch={self.epochs_total}")
-                save_models(path, mover=self.mover, critic=self.critic,
-                            cost=self.cost, verbose=show_progress)
+            self.save_models(f"{self.name}_epoch={self.epochs_total}",
+                             verbose=show_progress)
+
+    def save_models(self, name: str, verbose=False) -> None:
+        if self.checkpoint_dir is None:
+            return
+        save_models(self.checkpoint_dir / name,
+                    mover=self.mover, critic=self.critic, cost=self.cost,
+                    verbose=verbose)
 
 
 def run_experiment(source: CompositeDistribution, target: BasicDistribution,
@@ -326,7 +343,7 @@ def run_experiment(source: CompositeDistribution, target: BasicDistribution,
                             **config)
     if scheduler_params:
         experiment.init_schedulers(**scheduler_params)
-    experiment.run(num_epochs,
-                   logger=logger,
-                   plotter=plotter,
-                   show_progress=show_progress)
+    experiment.train(num_epochs,
+                     logger=logger,
+                     plotter=plotter,
+                     show_progress=show_progress)
