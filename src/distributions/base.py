@@ -3,7 +3,6 @@ from collections import Counter
 import torch
 
 
-# TODO: MultivariateNormal
 # TODO: Implement log_probs
 # TODO: Validate args
 
@@ -12,6 +11,7 @@ __all__ = ["BasicDistribution",
            "CompositeDistribution",
            "Uniform",
            "Normal",
+           "MultivariateNormal",
            "DiscreteMixture",
            "GaussianMixture",
            "to_composite"]
@@ -95,13 +95,27 @@ class Normal(BasicDistribution):
     @torch.no_grad()
     def sample(self, sample_shape=()):
         sample_shape = torch.Size(sample_shape)
-        random = torch.randn(sample_shape + self.event_shape,
-                             dtype=self.loc.dtype, device=self.device)
-        return self.loc + random * self.scale
+        eps = torch.randn(sample_shape + self.event_shape,
+                          dtype=self.loc.dtype, device=self.device)
+        return self.loc + eps * self.scale
 
     @property
     def mean(self):
         return self.loc
+
+
+class MultivariateNormal(Normal):
+    def __init__(self, loc, covariance_matrix, *, device=None):
+        scale = torch.linalg.cholesky(
+            _to_tensor(covariance_matrix, device))
+        super().__init__(loc, scale, device=device)
+
+    @torch.no_grad()
+    def sample(self, sample_shape=()):
+        sample_shape = torch.Size(sample_shape)
+        eps = torch.randn(sample_shape + self.event_shape,
+                          dtype=self.loc.dtype, device=self.device)
+        return self.loc + (self.scale @ eps.unsqueeze(-1)).squeeze(-1)
 
 
 class DiscreteMixture(CompositeDistribution):
