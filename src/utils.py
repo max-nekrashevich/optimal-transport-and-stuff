@@ -190,3 +190,28 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
 
     return (diff.dot(diff) + np.trace(sigma1) +
             np.trace(sigma2) - 2 * tr_covmean)
+
+
+def compute_LGW(mu1, sigma1, mu2, sigma2):
+    if  mu1.shape[0] > mu2.shape[0]:
+        mu1, sigma1, mu2, sigma2 = mu2, sigma2, mu1, sigma1
+    n = mu2.shape[0]
+    D0 = np.linalg.eigvalsh(sigma1)
+    D1 = np.linalg.eigvalsh(sigma1)
+
+    return 4 * ((D0.sum() - D1.sum()) ** 2 -
+                (np.linalg.norm(D0) - np.linalg.norm(D1)) ** 2 +
+                np.linalg.norm(D0[-n:] - D1) ** 2 +
+                np.linalg.norm(D0[:-n]) ** 2)
+
+
+def compute_GGW(mu1, sigma1, mu2, sigma2):
+    if  mu1.shape[0] > mu2.shape[0]:
+        mu1, sigma1, mu2, sigma2 = mu2, sigma2, mu1, sigma1
+    n = mu2.shape[0]
+    D0 = np.linalg.eigvalsh(sigma1)
+    D1 = np.linalg.eigvalsh(sigma1)
+
+    return 4 * (D0.sum() - D1.sum()) ** 2 + \
+           8 * np.linalg.norm(D0[-n:] - D1) ** 2 + \
+           8 * np.linalg.norm(D0[:-n]) ** 2
